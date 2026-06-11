@@ -1,0 +1,48 @@
+# Agent Coder Remote Runner - configuración local
+# Copia este archivo y ajusta los valores de conexión cuando despliegues otro runner.
+
+# URL del gateway central. Puede ser local, LAN o Cloudflare.
+GATEWAY_URL=http://localhost:8787/api
+
+# Clave compartida con el gateway para registrar runners y reclamar jobs.
+# Cambia este valor en producción y mantenlo igual al RUNNER_SHARED_KEY del admin/gateway.
+RUNNER_SHARED_KEY=e7add01506a87c38349d39e9c98989a4f6292693d7519d5097ab917e275c84f5
+
+# Identificador único de este runner. Debe coincidir con runnerTarget al crear jobs.
+RUNNER_ID=editarunner
+
+# Carpeta raíz permitida para este runner. Nada fuera de esta ruta será accesible.
+WORKSPACE_ROOT=C:/Users/Raul/Downloads/agent-coder-centralized-two-projects
+
+# Si true, shell.exec pide aprobación local en la terminal antes de ejecutar.
+RUNNER_REQUIRE_LOCAL_APPROVAL=false
+
+# Si true, permite cualquier ejecutable y no aplica COMMAND_ALLOWLIST.
+# Por defecto queda true para desarrollo local rápido.
+RUNNER_ALLOW_ALL_COMMANDS=true
+
+# Si true, permite patrones/comandos potencialmente peligrosos.
+# Si false, bloquea patrones como rm -rf, format, shutdown, diskpart, etc.
+RUNNER_ALLOW_DANGEROUS_COMMANDS=true
+
+# Si true, agrega comandos sensibles a la allowlist: powershell, bash, curl, ssh, docker, kubectl, etc.
+RUNNER_ALLOW_SENSITIVE_COMMANDS=true
+
+# Si true, habilita file.delete.
+RUNNER_ALLOW_DELETE=true
+
+# Comandos útiles para desarrollo cuando RUNNER_ALLOW_ALL_COMMANDS=false.
+COMMAND_ALLOWLIST=node,npm,npx,pnpm,yarn,corepack,git,where,cmd,rg,grep,findstr,find,ls,dir,tree,type,cat,java,mvn,gradle,dotnet,python,py,pip,pytest,go,gofmt,goimports,rustc,cargo,tsc,eslint,prettier,vite,next,jest,vitest,playwright,whoami,echo
+
+# Comandos sensibles que solo se agregan si RUNNER_ALLOW_SENSITIVE_COMMANDS=true.
+SENSITIVE_COMMAND_ALLOWLIST=powershell,pwsh,bash,sh,curl,wget,scp,ssh,docker,docker-compose,kubectl
+
+# Frecuencia de polling y heartbeat contra el gateway.
+RUNNER_POLL_INTERVAL_MS=2500
+RUNNER_HEARTBEAT_INTERVAL_MS=10000
+
+# Máximo de caracteres enviados al gateway por stdout/stderr. El log completo queda local.
+MAX_OUTPUT_CHARS=24000
+
+# Carpeta local de logs completos del runner.
+RUNNER_LOG_DIR=logs
