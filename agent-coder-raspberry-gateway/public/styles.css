@@ -133,3 +133,65 @@
   opacity:.38;
   filter:saturate(.55);
 }
+
+
+/* Server statistics screen */
+.stats-table{
+  width:100%;
+  border-collapse:collapse;
+  min-width:720px;
+  margin:0!important;
+  font-size:11px!important;
+}
+.stats-table th,
+.stats-table td{
+  border-bottom:1px solid #e2e8f0;
+  padding:2px 4px!important;
+  line-height:1.15!important;
+  height:21px!important;
+  text-align:left;
+  vertical-align:top;
+}
+.stats-table th{
+  position:sticky;
+  top:0;
+  z-index:1;
+  background:#f8fafc;
+  font-size:10px!important;
+  text-transform:uppercase;
+  letter-spacing:.04em;
+  color:#475569;
+}
+.stats-table td:first-child{
+  width:110px;
+  font-weight:900;
+  color:#334155;
+}
+.stats-table td:nth-child(2){
+  width:180px;
+  font-weight:800;
+}
+.stats-table td:last-child{
+  white-space:normal;
+  word-break:break-word;
+  font-family:"Cascadia Code","Fira Code",Consolas,monospace;
+}
+.server-summary{
+  justify-content:flex-start!important;
+  gap:12px!important;
+}
+#view-server .panel{
+  margin:0!important;
+  padding:0!important;
+  border-radius:0!important;
+}
+#view-server .explorer-head{
+  padding:4px!important;
+}
+#view-server h2,
+#view-server p{
+  margin:0!important;
+}
+#view-server .table-wrap h2{
+  padding:4px!important;
+}

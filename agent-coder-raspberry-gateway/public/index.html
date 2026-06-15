@@ -4,7 +4,7 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Agent Coder Gateway</title>
-    <link rel="stylesheet" href="/styles.css?v=3" />
+    <link rel="stylesheet" href="/styles.css?v=4" />
   </head>
   <body>
     <nav class="topbar">
@@ -34,6 +34,7 @@
           <button class="nav-btn active" data-route="home">Home</button>
           <button class="nav-btn" data-route="test">Test APIs</button>
           <button class="nav-btn" data-route="explorer">FileExplorer workspace</button>
+          <button class="nav-btn" data-route="server">Servidor</button>
         </div>
         <div class="desktop-runner runner-box">
           <button id="keyBtn" class="secondary">Key</button>
@@ -60,6 +61,7 @@
             <button id="homeHealthBtn">Probar API</button>
             <button data-route="explorer" class="secondary route-shortcut">Abrir FileExplorer</button>
             <button data-route="test" class="secondary route-shortcut">Ir a Test APIs</button>
+            <button data-route="server" class="secondary route-shortcut">Ver servidor</button>
           </div>
         </div>
       </section>
@@ -130,6 +132,39 @@
           </table>
         </div>
       </section>
+
+      <section id="view-server" class="view">
+        <div class="panel explorer-head">
+          <div>
+            <h2>Estadísticas del servidor</h2>
+            <p class="muted">Resumen detallado del runner seleccionado: sistema, CPU, memoria, disco, red, servicios y procesos.</p>
+          </div>
+          <div class="actions">
+            <button id="refreshServerBtn">Refrescar</button>
+          </div>
+        </div>
+
+        <div class="panel toolbar server-summary">
+          <span id="serverStamp" class="muted">Sin cargar</span>
+          <span id="serverHost" class="muted">Host: -</span>
+          <span id="serverLoad" class="muted">Load: -</span>
+        </div>
+
+        <div class="panel table-wrap">
+          <table class="stats-table">
+            <thead><tr><th>Categoría</th><th>Métrica</th><th>Valor</th></tr></thead>
+            <tbody id="serverStatsBody"><tr><td colspan="3" class="empty">Sin cargar.</td></tr></tbody>
+          </table>
+        </div>
+
+        <div class="panel table-wrap">
+          <h2>Procesos principales</h2>
+          <table class="stats-table">
+            <thead><tr><th>PID</th><th>CPU%</th><th>MEM%</th><th>Comando</th></tr></thead>
+            <tbody id="serverProcessesBody"><tr><td colspan="4" class="empty">Sin cargar.</td></tr></tbody>
+          </table>
+        </div>
+      </section>
     </main>
 
     <dialog id="keyModal" class="modal">
@@ -173,6 +208,6 @@
     </dialog>
 
     <div id="toast" class="toast" hidden></div>
-    <script src="/app.js?v=3"></script>
+    <script src="/app.js?v=4"></script>
   </body>
 </html>

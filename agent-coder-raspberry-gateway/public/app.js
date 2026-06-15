@@ -75,6 +75,7 @@ function setRoute(route) {
   $$('.nav-btn').forEach((el) => el.classList.toggle('active', el.dataset.route === route))
   closeMobileMenu()
   if (route === 'explorer' && state.files.length === 0) loadFiles().catch((error) => toast(error.message))
+  if (route === 'server') loadServerStats().catch((error) => toast(error.message))
 }
 
 function apiHeaders(hasBody = false) {
@@ -426,6 +427,151 @@ function setRunner(value) {
   saveState()
 }
 
+
+const serverStatsPython = String.raw`
+import json, os, platform, socket, subprocess, shutil, time
+
+def run(cmd):
+    try:
+        return subprocess.run(cmd, capture_output=True, text=True, timeout=8).stdout.strip()
+    except Exception as exc:
+        return f"ERROR: {exc}"
+
+def read(path):
+    try:
+        with open(path, "r", encoding="utf-8", errors="replace") as f:
+            return f.read().strip()
+    except Exception:
+        return ""
+
+def meminfo():
+    data = {}
+    for line in read("/proc/meminfo").splitlines():
+        if ":" in line:
+            k, v = line.split(":", 1)
+            parts = v.strip().split()
+            if parts and parts[0].isdigit():
+                data[k] = int(parts[0])
+    total = data.get("MemTotal", 0)
+    avail = data.get("MemAvailable", 0)
+    used = max(0, total - avail)
+    swap_total = data.get("SwapTotal", 0)
+    swap_free = data.get("SwapFree", 0)
+    return total, used, avail, swap_total, max(0, swap_total - swap_free), swap_free
+
+def gb(kb):
+    return round(kb / 1024 / 1024, 2)
+
+def disk(path):
+    d = shutil.disk_usage(path)
+    return {"total_gb": round(d.total/1024**3,2), "used_gb": round(d.used/1024**3,2), "free_gb": round(d.free/1024**3,2), "used_pct": round((d.used/d.total)*100,1) if d.total else 0}
+
+def temp():
+    vals=[]
+    base="/sys/class/thermal"
+    if os.path.isdir(base):
+        for name in os.listdir(base):
+            t=read(os.path.join(base,name,"temp"))
+            typ=read(os.path.join(base,name,"type")) or name
+            if t.lstrip("-").isdigit():
+                c=float(t)/1000 if abs(int(t))>200 else float(t)
+                vals.append(f"{typ}: {c:.1f}°C")
+    return "; ".join(vals) or "No detectada"
+
+def services():
+    names=["agent-coder-gateway.service","agent-coder-runner.service","agent-coder-cloudflared.service","agent-coder-disk-monitor.timer"]
+    out=[]
+    for n in names:
+        active=run(["systemctl","is-active",n]) or "unknown"
+        enabled=run(["systemctl","is-enabled",n]) or "unknown"
+        out.append({"name":n,"state":f"{active} / {enabled}"})
+    return out
+
+def processes():
+    raw=run(["ps","-eo","pid,pcpu,pmem,comm","--sort=-pcpu"])
+    rows=[]
+    for line in raw.splitlines()[1:13]:
+        parts=line.split(None,3)
+        if len(parts)==4:
+            rows.append({"pid":parts[0],"cpu":parts[1],"mem":parts[2],"cmd":parts[3]})
+    return rows
+
+mt,mu,ma,st,su,sf=meminfo()
+root=disk("/")
+load=os.getloadavg() if hasattr(os,"getloadavg") else (0,0,0)
+ips=run(["hostname","-I"])
+route=run(["ip","route","get","1.1.1.1"])
+primary=""
+if " src " in route:
+    primary=route.split(" src ",1)[1].split()[0]
+metrics=[]
+def add(cat, metric, value): metrics.append({"cat":cat,"metric":metric,"value":str(value)})
+add("Sistema","Hostname",socket.gethostname())
+add("Sistema","Fecha servidor",time.strftime("%Y-%m-%d %H:%M:%S %Z"))
+add("Sistema","Uptime",run(["uptime","-p"]))
+add("Sistema","Kernel",platform.release())
+add("Sistema","Arquitectura",platform.machine())
+os_pretty=""
+for _line in read("/etc/os-release").splitlines():
+    if _line.startswith("PRETTY_NAME="):
+        os_pretty=_line.split("=",1)[1].strip().strip("\"")
+        break
+add("Sistema","OS",os_pretty or platform.system())
+add("CPU","Modelo",run(["bash","-lc","lscpu | awk -F: '/Model name|Hardware|Model/ {gsub(/^[ \\t]+/,\"\",$2); print $2; exit}'"]))
+add("CPU","Cores lógicos",os.cpu_count())
+add("CPU","Load avg",f"{load[0]:.2f}, {load[1]:.2f}, {load[2]:.2f}")
+add("CPU","Temperatura",temp())
+add("Memoria","RAM total",f"{gb(mt)} GB")
+add("Memoria","RAM usada",f"{gb(mu)} GB")
+add("Memoria","RAM disponible",f"{gb(ma)} GB")
+add("Memoria","Swap total",f"{gb(st)} GB")
+add("Memoria","Swap usada",f"{gb(su)} GB")
+add("Disco","/ total",f"{root['total_gb']} GB")
+add("Disco","/ usado",f"{root['used_gb']} GB ({root['used_pct']}%)")
+add("Disco","/ libre",f"{root['free_gb']} GB")
+add("Disco","df -h",run(["df","-h","/"]).replace("\n"," | "))
+add("Disco","Inodos",run(["df","-ih","/"]).replace("\n"," | "))
+add("Red","IP principal",primary or "No detectada")
+add("Red","IPs",ips)
+add("Red","Ruta default",run(["ip","route","show","default"]))
+add("Red","Puertos escuchando",run(["bash","-lc","ss -tulpen 2>/dev/null | head -n 20"]).replace("\n"," | "))
+for svc in services(): add("Servicios",svc["name"],svc["state"])
+add("Procesos","Total",run(["bash","-lc","ps -e --no-headers | wc -l"]))
+print(json.dumps({"metrics":metrics,"processes":processes(),"host":socket.gethostname(),"load":f"{load[0]:.2f}, {load[1]:.2f}, {load[2]:.2f}","stamp":time.strftime("%Y-%m-%d %H:%M:%S %Z")}, ensure_ascii=False))
+`
+
+function renderServerStats(data) {
+  const body = $('serverStatsBody')
+  const procBody = $('serverProcessesBody')
+  $('serverStamp').textContent = `Actualizado: ${data.stamp || '-'}`
+  $('serverHost').textContent = `Host: ${data.host || '-'}`
+  $('serverLoad').textContent = `Load: ${data.load || '-'}`
+  body.innerHTML = ''
+  for (const row of data.metrics || []) {
+    const tr = document.createElement('tr')
+    tr.innerHTML = `<td>${escapeHtml(row.cat)}</td><td>${escapeHtml(row.metric)}</td><td>${escapeHtml(row.value)}</td>`
+    body.appendChild(tr)
+  }
+  if (!body.children.length) body.innerHTML = '<tr><td colspan="3" class="empty">Sin datos.</td></tr>'
+  procBody.innerHTML = ''
+  for (const row of data.processes || []) {
+    const tr = document.createElement('tr')
+    tr.innerHTML = `<td>${escapeHtml(row.pid)}</td><td>${escapeHtml(row.cpu)}</td><td>${escapeHtml(row.mem)}</td><td>${escapeHtml(row.cmd)}</td>`
+    procBody.appendChild(tr)
+  }
+  if (!procBody.children.length) procBody.innerHTML = '<tr><td colspan="4" class="empty">Sin procesos.</td></tr>'
+}
+
+async function loadServerStats() {
+  if (!$('serverStatsBody')) return
+  $('serverStatsBody').innerHTML = '<tr><td colspan="3" class="empty">Cargando estadísticas...</td></tr>'
+  $('serverProcessesBody').innerHTML = '<tr><td colspan="4" class="empty">Cargando procesos...</td></tr>'
+  const job = await runJob('shell.exec', { command: 'python3', args: ['-c', serverStatsPython], cwd: '/', timeoutMs: 30000 }, 'Estadísticas del servidor desde gateway')
+  if (job.status !== 'success') throw new Error(job.stderrTail || job.error || job.summary || 'No se pudieron cargar estadísticas')
+  const raw = job.stdoutTail || ''
+  renderServerStats(JSON.parse(raw))
+}
+
 function wire() {
   syncHeader()
   setRoute(state.route || 'home')
@@ -453,6 +599,7 @@ function wire() {
   $('sampleNodeBtn').onclick = () => { $('jobType').value = 'shell.exec'; $('payload').value = JSON.stringify({ command: 'node', args: ['--version'], cwd: '.', timeoutMs: 30000 }, null, 2) }
   $('sampleStatusBtn').onclick = () => { $('jobType').value = 'git.status'; $('payload').value = JSON.stringify({ path: '.', timeoutMs: 30000 }, null, 2) }
   $('goPathBtn').onclick = () => loadFiles().catch((e) => toast(e.message))
+  $('refreshServerBtn').onclick = () => loadServerStats().catch((e) => toast(e.message))
   $('upBtn').onclick = () => openDir(parentPath(state.currentPath))
   $('actionsBtn').onclick = () => $('actionsModal').showModal()
   $('refreshFilesBtn').onclick = (e) => { e.preventDefault(); loadFiles().catch((err) => toast(err.message)) }
