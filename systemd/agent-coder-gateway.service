@@ -1,0 +1,20 @@
+[Unit]
+Description=Agent Coder Raspberry Gateway
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/home/pi/Agent-IA-Coder/agent-coder-raspberry-gateway
+Environment=NODE_ENV=production
+ExecStart=/usr/bin/npm start
+Restart=always
+RestartSec=5
+KillSignal=SIGTERM
+TimeoutStopSec=30
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,11 @@
+[Unit]
+Description=Run Agent Coder Disk Space Monitor periodically
+
+[Timer]
+OnBootSec=2min
+OnUnitActiveSec=5min
+Persistent=true
+Unit=agent-coder-disk-monitor.service
+
+[Install]
+WantedBy=timers.target

@@ -1,0 +1,20 @@
+[Unit]
+Description=Agent Coder Cloudflared Tunnel Manager
+Wants=network-online.target agent-coder-gateway.service
+After=network-online.target agent-coder-gateway.service
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/home/pi/Agent-IA-Coder/agent-coder-cloudflared-manager
+EnvironmentFile=/home/pi/Agent-IA-Coder/agent-coder-cloudflared-manager/.env
+ExecStart=/usr/bin/python3 /home/pi/Agent-IA-Coder/agent-coder-cloudflared-manager/manager.py
+Restart=always
+RestartSec=10
+KillSignal=SIGTERM
+TimeoutStopSec=30
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target
