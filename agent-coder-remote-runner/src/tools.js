@@ -62,12 +62,14 @@ async function walk(guard, dir, options, depth = 0, acc = []) {
 
 export async function fileList(payload, guard) {
   const target = guard.resolveSafe(payload.path || '.')
+  const showHidden = Boolean(payload.showHidden)
+  const defaultIgnores = Array.from(DEFAULT_IGNORES).filter((name) => !(showHidden && name.startsWith('.')))
   const options = {
     maxDepth: Math.min(Number(payload.maxDepth ?? 3), 12),
     maxEntries: Math.min(Number(payload.maxEntries ?? 500), 10000),
-    showHidden: Boolean(payload.showHidden),
+    showHidden,
     showIgnored: Boolean(payload.showIgnored),
-    ignore: new Set([...(payload.ignore || []), ...DEFAULT_IGNORES].map(String))
+    ignore: new Set([...(payload.ignore || []), ...defaultIgnores].map(String))
   }
   const items = await walk(guard, target, options)
   return { path: relativePath(guard, target), items, total: items.length, truncated: items.length >= options.maxEntries }
