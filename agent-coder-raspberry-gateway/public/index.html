@@ -4,28 +4,44 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Agent Coder Gateway</title>
-    <link rel="stylesheet" href="/styles.css?v=2" />
+    <link rel="stylesheet" href="/styles.css?v=3" />
   </head>
   <body>
     <nav class="topbar">
-      <div class="brand" data-route="home">
-        <span class="brand-mark">AC</span>
-        <div>
-          <strong>Agent Coder</strong>
-          <small>Raspberry Gateway</small>
-        </div>
-      </div>
-      <div class="nav-actions">
-        <button class="nav-btn active" data-route="home">Home</button>
-        <button class="nav-btn" data-route="test">Test APIs</button>
-        <button class="nav-btn" data-route="explorer">FileExplorer workspace</button>
-      </div>
-      <div class="runner-box">
-        <button id="keyBtn" class="secondary">Key</button>
+      <div class="mobile-runner runner-box">
+        <button id="keyBtnMobile" class="secondary">Key</button>
         <label class="runner-label">
           <span>Runner</span>
-          <input id="runnerTarget" placeholder="master-server" autocomplete="off" />
+          <input id="runnerTargetMobile" placeholder="master-server" autocomplete="off" />
         </label>
+      </div>
+
+      <div class="nav-main">
+        <div class="brand" data-route="home">
+          <span class="brand-mark">AC</span>
+          <div>
+            <strong>Agent Coder</strong>
+            <small>Raspberry Gateway</small>
+          </div>
+        </div>
+        <button id="hamburgerBtn" class="hamburger" aria-label="Abrir menú" aria-expanded="false">
+          <span></span><span></span><span></span>
+        </button>
+      </div>
+
+      <div id="navMenu" class="nav-menu">
+        <div class="nav-actions">
+          <button class="nav-btn active" data-route="home">Home</button>
+          <button class="nav-btn" data-route="test">Test APIs</button>
+          <button class="nav-btn" data-route="explorer">FileExplorer workspace</button>
+        </div>
+        <div class="desktop-runner runner-box">
+          <button id="keyBtn" class="secondary">Key</button>
+          <label class="runner-label">
+            <span>Runner</span>
+            <input id="runnerTarget" placeholder="master-server" autocomplete="off" />
+          </label>
+        </div>
       </div>
     </nav>
 
@@ -90,7 +106,7 @@
         <div class="panel explorer-head">
           <div>
             <h2>FileExplorer workspace</h2>
-            <p class="muted">Navega, selecciona, descarga, sube y edita archivos del workspace del runner seleccionado.</p>
+            <p class="muted">Navega, selecciona y opera archivos del workspace del runner seleccionado.</p>
           </div>
           <div class="path-tools">
             <label>Ruta actual<input id="currentPath" value="." /></label>
@@ -100,12 +116,9 @@
         </div>
 
         <div class="panel toolbar">
-          <label class="checkline"><input id="showHidden" type="checkbox" /> Mostrar ocultos</label>
-          <label class="upload-btn">Subir archivos<input id="uploadFiles" type="file" multiple /></label>
-          <button id="refreshFilesBtn">Refrescar</button>
-          <button id="downloadSelectedBtn" class="secondary">Descargar seleccionados</button>
-          <button id="zipSelectedBtn" class="secondary">ZIP seleccionados</button>
+          <button id="actionsBtn">Acciones</button>
           <span id="fileCount" class="muted">0 archivos</span>
+          <span id="selectedCount" class="muted">0 seleccionados</span>
         </div>
 
         <div class="panel table-wrap">
@@ -124,7 +137,30 @@
         <h2>Configurar Key</h2>
         <p class="muted">Se guarda en localStorage de este navegador.</p>
         <label>x-agent-key<input id="apiKey" type="password" placeholder="AGENT_API_KEY" /></label>
-        <div class="actions right"><button id="cancelKeyBtn" value="cancel" class="secondary">Cancelar</button><button id="acceptKeyBtn" value="default">Aceptar</button></div>
+        <div class="actions right"><button value="cancel" class="secondary">Cancelar</button><button id="acceptKeyBtn" value="default">Aceptar</button></div>
+      </form>
+    </dialog>
+
+    <dialog id="actionsModal" class="modal">
+      <form method="dialog" class="modal-card">
+        <h2>Acciones FileExplorer</h2>
+        <p class="muted">Selecciona una acción para la ruta actual o los archivos marcados.</p>
+        <label class="checkline"><input id="showHidden" type="checkbox" /> Mostrar ocultos</label>
+        <label class="upload-btn modal-upload">Subir archivos<input id="uploadFiles" type="file" multiple /></label>
+        <button id="refreshFilesBtn" value="cancel">Refrescar</button>
+        <button id="downloadSelectedBtn" value="cancel" class="secondary">Descargar seleccionados</button>
+        <button id="zipSelectedBtn" value="cancel" class="secondary">ZIP seleccionados</button>
+        <button id="deleteSelectedBtn" value="cancel" class="danger">Eliminar seleccionados</button>
+        <div class="actions right"><button value="cancel" class="secondary">Cerrar</button></div>
+      </form>
+    </dialog>
+
+    <dialog id="textOpenModal" class="modal">
+      <form method="dialog" class="modal-card">
+        <h2>Abrir archivo de texto</h2>
+        <p id="textOpenPath" class="muted"></p>
+        <label>Líneas a mostrar inicialmente<input id="textLineLimit" type="number" min="1" max="20000" value="1000" /></label>
+        <div class="actions right"><button value="cancel" class="secondary">Cancelar</button><button id="openTextBtn" value="default">Abrir</button></div>
       </form>
     </dialog>
 
@@ -137,6 +173,6 @@
     </dialog>
 
     <div id="toast" class="toast" hidden></div>
-    <script src="/app.js?v=2"></script>
+    <script src="/app.js?v=3"></script>
   </body>
 </html>

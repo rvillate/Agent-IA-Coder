@@ -1,7 +1,8 @@
 const $ = (id) => document.getElementById(id)
 const $$ = (selector) => Array.from(document.querySelectorAll(selector))
 
-const storeKey = 'agent-coder-gateway-v2'
+const storeKey = 'agent-coder-gateway-v3'
+const textExtensions = new Set(['md', 'markdown', 'txt', 'log', 'json', 'js', 'ts', 'jsx', 'tsx', 'css', 'html', 'htm', 'xml', 'yml', 'yaml', 'env', 'ini', 'conf', 'config', 'sh', 'bash', 'py', 'java', 'cs', 'go', 'rs', 'sql', 'csv'])
 let state = {
   apiBase: '/api',
   apiKey: '',
@@ -10,21 +11,37 @@ let state = {
   currentPath: '.',
   files: [],
   selected: new Set(),
-  editingPath: ''
+  editingPath: '',
+  pendingTextPath: '',
+  showHidden: false
 }
 
 try { state = { ...state, ...JSON.parse(localStorage.getItem(storeKey) || '{}') } } catch {}
+state.selected = new Set()
 
 function saveState() {
-  localStorage.setItem(storeKey, JSON.stringify({ apiBase: state.apiBase, apiKey: state.apiKey, runnerTarget: state.runnerTarget, currentPath: state.currentPath }))
+  localStorage.setItem(storeKey, JSON.stringify({
+    apiBase: state.apiBase,
+    apiKey: state.apiKey,
+    runnerTarget: state.runnerTarget,
+    currentPath: state.currentPath,
+    showHidden: state.showHidden
+  }))
   syncHeader()
 }
 
+function setValue(id, value) {
+  const el = $(id)
+  if (el) el.value = value
+}
+
 function syncHeader() {
-  $('apiBase').value = state.apiBase
-  $('apiKey').value = state.apiKey
-  $('runnerTarget').value = state.runnerTarget
-  $('currentPath').value = state.currentPath
+  setValue('apiBase', state.apiBase)
+  setValue('apiKey', state.apiKey)
+  setValue('runnerTarget', state.runnerTarget)
+  setValue('runnerTargetMobile', state.runnerTarget)
+  setValue('currentPath', state.currentPath)
+  if ($('showHidden')) $('showHidden').checked = Boolean(state.showHidden)
   $('homeRunner').textContent = state.runnerTarget || '-'
   $('homeKey').textContent = state.apiKey ? 'Configurada' : 'No configurada'
 }
@@ -34,7 +51,7 @@ function toast(message) {
   el.textContent = message
   el.hidden = false
   clearTimeout(window.__toastTimer)
-  window.__toastTimer = setTimeout(() => { el.hidden = true }, 2800)
+  window.__toastTimer = setTimeout(() => { el.hidden = true }, 3200)
 }
 
 function print(data) {
@@ -47,10 +64,16 @@ function setStatus(ok, text) {
   $('homeHealth').textContent = text
 }
 
+function closeMobileMenu() {
+  $('navMenu').classList.remove('open')
+  $('hamburgerBtn').setAttribute('aria-expanded', 'false')
+}
+
 function setRoute(route) {
   state.route = route
   $$('.view').forEach((el) => el.classList.toggle('active', el.id === `view-${route}`))
   $$('.nav-btn').forEach((el) => el.classList.toggle('active', el.dataset.route === route))
+  closeMobileMenu()
   if (route === 'explorer' && state.files.length === 0) loadFiles().catch((error) => toast(error.message))
 }
 
@@ -113,10 +136,21 @@ function formatSize(size) {
   return `${n.toFixed(i ? 1 : 0)} ${units[i]}`
 }
 
+function extOf(path) {
+  const name = String(path || '').split('/').pop() || ''
+  const i = name.lastIndexOf('.')
+  return i >= 0 ? name.slice(i + 1).toLowerCase() : ''
+}
+
+function isTextFile(itemOrPath) {
+  const path = typeof itemOrPath === 'string' ? itemOrPath : itemOrPath?.name || itemOrPath?.path || ''
+  return textExtensions.has(extOf(path))
+}
+
 function fileIcon(item) {
   if (item.type === 'directory') return '📁'
-  const ext = item.name.split('.').pop().toLowerCase()
-  if (['js', 'ts', 'json', 'html', 'css', 'py', 'sh'].includes(ext)) return '📄'
+  const ext = extOf(item.name)
+  if (textExtensions.has(ext)) return '📝'
   if (['png', 'jpg', 'jpeg', 'gif', 'webp', 'svg'].includes(ext)) return '🖼️'
   if (['zip', 'gz', 'tar', 'rar'].includes(ext)) return '🗜️'
   return '📄'
@@ -130,10 +164,15 @@ function dateParts(ms) {
   return [d.toLocaleDateString(), d.toLocaleTimeString()]
 }
 
+function updateCounts() {
+  $('fileCount').textContent = `${state.files.length} item(s)`
+  $('selectedCount').textContent = `${state.selected.size} seleccionado(s)`
+}
+
 function renderFiles() {
   const body = $('filesBody')
   const files = state.files || []
-  $('fileCount').textContent = `${files.length} item(s)`
+  updateCounts()
   $('selectAll').checked = files.length > 0 && files.every((f) => state.selected.has(f.path))
   if (!files.length) {
     body.innerHTML = '<tr><td colspan="12" class="empty">Sin archivos para mostrar.</td></tr>'
@@ -155,10 +194,14 @@ function renderFiles() {
       if (event.target.checked) state.selected.add(item.path); else state.selected.delete(item.path)
       renderFiles()
     }
-    tr.querySelector('.open-item').onclick = () => item.type === 'directory' ? openDir(item.path) : editFile(item.path)
+    tr.querySelector('.open-item').onclick = () => {
+      if (item.type === 'directory') return openDir(item.path)
+      if (isTextFile(item)) return askOpenText(item.path)
+      return editFile(item.path)
+    }
     const actions = tr.querySelector('.row-actions')
     const dl = document.createElement('button'); dl.textContent = 'Descargar'; dl.className = 'mini'; dl.disabled = item.type !== 'file'; dl.onclick = () => downloadPath(item.path)
-    const ed = document.createElement('button'); ed.textContent = 'Editar'; ed.className = 'mini secondary'; ed.disabled = item.type !== 'file'; ed.onclick = () => editFile(item.path)
+    const ed = document.createElement('button'); ed.textContent = isTextFile(item) ? 'Abrir' : 'Editar'; ed.className = 'mini secondary'; ed.disabled = item.type !== 'file'; ed.onclick = () => isTextFile(item) ? askOpenText(item.path) : editFile(item.path)
     actions.append(dl, ed)
     body.appendChild(tr)
   }
@@ -166,9 +209,10 @@ function renderFiles() {
 
 async function loadFiles() {
   state.currentPath = $('currentPath').value || state.currentPath || '.'
+  state.showHidden = Boolean($('showHidden')?.checked)
   saveState()
   $('filesBody').innerHTML = '<tr><td colspan="12" class="empty">Cargando...</td></tr>'
-  const job = await runJob('file.list', { path: state.currentPath, maxDepth: 0, maxEntries: 1000, showHidden: $('showHidden').checked }, 'Listar workspace desde web')
+  const job = await runJob('file.list', { path: state.currentPath, maxDepth: 0, maxEntries: 1000, showHidden: state.showHidden }, 'Listar workspace desde web')
   if (job.status !== 'success') throw new Error(job.stderrTail || job.error || job.summary || 'Error listando archivos')
   state.files = job.result.items || []
   state.selected.clear()
@@ -204,8 +248,8 @@ function saveBlob(blob, name) {
   setTimeout(() => URL.revokeObjectURL(url), 1000)
 }
 
-async function readRemote(path, encoding = 'base64') {
-  const job = await runJob('file.read', { path, encoding, maxBytes: 25 * 1024 * 1024, maxBytesLimit: 25 * 1024 * 1024 }, `Leer ${path}`)
+async function readRemote(path, encoding = 'base64', maxBytes = 25 * 1024 * 1024) {
+  const job = await runJob('file.read', { path, encoding, maxBytes, maxBytesLimit: maxBytes }, `Leer ${path}`)
   if (job.status !== 'success') throw new Error(job.stderrTail || job.error || job.summary || `No se pudo leer ${path}`)
   return job.result
 }
@@ -222,6 +266,7 @@ async function downloadSelected() {
     const item = state.files.find((f) => f.path === path)
     if (item?.type === 'file') await downloadPath(path)
   }
+  $('actionsModal').close()
 }
 
 async function editFile(path) {
@@ -230,6 +275,42 @@ async function editFile(path) {
   $('editorTitle').textContent = `Editar ${path}`
   $('editorText').value = data.content
   $('editorModal').showModal()
+}
+
+function askOpenText(path) {
+  state.pendingTextPath = path
+  $('textOpenPath').textContent = path
+  $('textLineLimit').value = '1000'
+  $('textOpenModal').showModal()
+}
+
+function escapeHtml(value) {
+  return String(value).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]))
+}
+
+function openTextTab(path, content, lines, truncated) {
+  const limited = content.split(/\r?\n/).slice(0, lines).join('\n')
+  const doc = `<!doctype html><html lang="es"><head><meta charset="utf-8"><title>${escapeHtml(path)}</title><style>
+    body{margin:0;background:#0f172a;color:#e2e8f0;font:13px/1.45 Consolas,monospace}
+    header{position:sticky;top:0;background:#111827;padding:10px 12px;border-bottom:1px solid #334155;font-family:system-ui,sans-serif}
+    strong{display:block;color:#fff}small{color:#94a3b8}
+    pre{margin:0;padding:14px;white-space:pre-wrap;word-break:break-word}
+  </style></head><body><header><strong>${escapeHtml(path)}</strong><small>Mostrando ${lines} línea(s)${truncated ? ' · archivo truncado por límite de lectura' : ''}</small></header><pre>${escapeHtml(limited)}</pre></body></html>`
+  const win = window.open('', '_blank')
+  if (!win) return toast('El navegador bloqueó la pestaña nueva')
+  win.document.open()
+  win.document.write(doc)
+  win.document.close()
+}
+
+async function openPendingText(event) {
+  event.preventDefault()
+  const path = state.pendingTextPath
+  const lines = Math.max(1, Math.min(20000, Number($('textLineLimit').value || 1000)))
+  if (!path) return
+  const data = await readRemote(path, 'utf8', 25 * 1024 * 1024)
+  openTextTab(path, data.content, lines, data.truncated)
+  $('textOpenModal').close()
 }
 
 async function saveEditor(event) {
@@ -253,7 +334,23 @@ async function uploadFiles(event) {
     if (job.status !== 'success') throw new Error(job.stderrTail || job.error || job.summary || `No se pudo subir ${file.name}`)
   }
   event.target.value = ''
+  $('actionsModal').close()
   toast(`${files.length} archivo(s) subido(s)`)
+  await loadFiles()
+}
+
+async function deleteSelected() {
+  const selected = Array.from(state.selected)
+  if (!selected.length) return toast('Selecciona archivos primero')
+  const names = selected.slice(0, 5).join('\n')
+  const extra = selected.length > 5 ? `\n... y ${selected.length - 5} más` : ''
+  if (!confirm(`Vas a eliminar ${selected.length} item(s):\n${names}${extra}\n\nEsta acción no se puede deshacer. ¿Continuar?`)) return
+  for (const path of selected) {
+    const job = await runJob('file.delete', { path }, `Eliminar ${path}`)
+    if (job.status !== 'success') throw new Error(job.stderrTail || job.error || job.summary || `No se pudo eliminar ${path}`)
+  }
+  $('actionsModal').close()
+  toast(`${selected.length} item(s) eliminado(s)`)
   await loadFiles()
 }
 
@@ -306,10 +403,11 @@ async function zipSelected() {
     const item = state.files.find((f) => f.path === path)
     if (item?.type !== 'file') continue
     const data = await readRemote(path, 'base64')
-    entries.push({ name: path.replace(/^\.?\/?/, ''), data: base64ToBytes(data.content) })
+    entries.push({ name: path.replace(/^\.?\//, ''), data: base64ToBytes(data.content) })
   }
   if (!entries.length) return toast('No hay archivos seleccionados')
   saveBlob(makeZip(entries), `agent-coder-${Date.now()}.zip`)
+  $('actionsModal').close()
 }
 
 async function testHealth() {
@@ -323,15 +421,27 @@ async function testHealth() {
   }
 }
 
+function setRunner(value) {
+  state.runnerTarget = String(value || '').trim()
+  saveState()
+}
+
 function wire() {
   syncHeader()
   setRoute(state.route || 'home')
   $$('.nav-btn, .route-shortcut, .brand').forEach((el) => { el.onclick = () => setRoute(el.dataset.route) })
-  $('runnerTarget').oninput = (e) => { state.runnerTarget = e.target.value.trim(); saveState() }
+  $('hamburgerBtn').onclick = () => {
+    const open = !$('navMenu').classList.contains('open')
+    $('navMenu').classList.toggle('open', open)
+    $('hamburgerBtn').setAttribute('aria-expanded', String(open))
+  }
+  $('runnerTarget').oninput = (e) => setRunner(e.target.value)
+  $('runnerTargetMobile').oninput = (e) => setRunner(e.target.value)
   $('apiBase').oninput = (e) => { state.apiBase = e.target.value.trim() || '/api'; saveState() }
   $('keyBtn').onclick = () => { $('apiKey').value = state.apiKey; $('keyModal').showModal() }
+  $('keyBtnMobile').onclick = () => { $('apiKey').value = state.apiKey; $('keyModal').showModal() }
   $('acceptKeyBtn').onclick = (e) => { e.preventDefault(); state.apiKey = $('apiKey').value; saveState(); $('keyModal').close(); toast('Key guardada') }
-  $('saveConfig').onclick = () => { state.apiBase = $('apiBase').value; state.runnerTarget = $('runnerTarget').value; state.apiKey = $('apiKey').value; saveState(); toast('Configuración guardada') }
+  $('saveConfig').onclick = () => { state.apiBase = $('apiBase').value; state.apiKey = $('apiKey').value; saveState(); toast('Configuración guardada') }
   $('healthBtn').onclick = testHealth
   $('homeHealthBtn').onclick = testHealth
   $('runnersBtn').onclick = async () => { try { print(await api('/runners')) } catch (e) { print(e.message) } }
@@ -343,14 +453,17 @@ function wire() {
   $('sampleNodeBtn').onclick = () => { $('jobType').value = 'shell.exec'; $('payload').value = JSON.stringify({ command: 'node', args: ['--version'], cwd: '.', timeoutMs: 30000 }, null, 2) }
   $('sampleStatusBtn').onclick = () => { $('jobType').value = 'git.status'; $('payload').value = JSON.stringify({ path: '.', timeoutMs: 30000 }, null, 2) }
   $('goPathBtn').onclick = () => loadFiles().catch((e) => toast(e.message))
-  $('refreshFilesBtn').onclick = () => loadFiles().catch((e) => toast(e.message))
   $('upBtn').onclick = () => openDir(parentPath(state.currentPath))
-  $('showHidden').onchange = () => loadFiles().catch((e) => toast(e.message))
+  $('actionsBtn').onclick = () => $('actionsModal').showModal()
+  $('refreshFilesBtn').onclick = (e) => { e.preventDefault(); loadFiles().catch((err) => toast(err.message)) }
+  $('showHidden').onchange = () => { state.showHidden = $('showHidden').checked; saveState(); loadFiles().catch((e) => toast(e.message)) }
   $('selectAll').onchange = (e) => { state.selected = new Set(e.target.checked ? state.files.map((f) => f.path) : []); renderFiles() }
-  $('downloadSelectedBtn').onclick = () => downloadSelected().catch((e) => toast(e.message))
-  $('zipSelectedBtn').onclick = () => zipSelected().catch((e) => toast(e.message))
+  $('downloadSelectedBtn').onclick = (e) => { e.preventDefault(); downloadSelected().catch((err) => toast(err.message)) }
+  $('zipSelectedBtn').onclick = (e) => { e.preventDefault(); zipSelected().catch((err) => toast(err.message)) }
+  $('deleteSelectedBtn').onclick = (e) => { e.preventDefault(); deleteSelected().catch((err) => toast(err.message)) }
   $('uploadFiles').onchange = (e) => uploadFiles(e).catch((error) => toast(error.message))
   $('saveEditorBtn').onclick = (e) => saveEditor(e).catch((error) => toast(error.message))
+  $('openTextBtn').onclick = (e) => openPendingText(e).catch((error) => toast(error.message))
 }
 
 wire()
