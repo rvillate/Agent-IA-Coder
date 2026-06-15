@@ -4,85 +4,139 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Agent Coder Gateway</title>
-    <link rel="stylesheet" href="/styles.css" />
+    <link rel="stylesheet" href="/styles.css?v=2" />
   </head>
   <body>
-    <main class="container">
-      <section class="hero">
+    <nav class="topbar">
+      <div class="brand" data-route="home">
+        <span class="brand-mark">AC</span>
         <div>
-          <p class="eyebrow">Raspberry Gateway</p>
-          <h1>Agent Coder Central</h1>
-          <p>API central con DB local para GPT Actions y runners remotos.</p>
+          <strong>Agent Coder</strong>
+          <small>Raspberry Gateway</small>
         </div>
-        <div class="status-card">
-          <span id="status-dot" class="dot"></span>
-          <span id="status-text">Sin probar</span>
+      </div>
+      <div class="nav-actions">
+        <button class="nav-btn active" data-route="home">Home</button>
+        <button class="nav-btn" data-route="test">Test APIs</button>
+        <button class="nav-btn" data-route="explorer">FileExplorer workspace</button>
+      </div>
+      <div class="runner-box">
+        <button id="keyBtn" class="secondary">Key</button>
+        <label class="runner-label">
+          <span>Runner</span>
+          <input id="runnerTarget" placeholder="master-server" autocomplete="off" />
+        </label>
+      </div>
+    </nav>
+
+    <main class="shell">
+      <section id="view-home" class="view active">
+        <div class="hero-card">
+          <p class="eyebrow">Gateway web console</p>
+          <h1>Controla runners, jobs y archivos sin reiniciar el túnel.</h1>
+          <p class="lead">Esta interfaz usa la API del gateway actual y guarda el runner/key en cache local del navegador.</p>
+          <div class="quick-grid">
+            <article><strong id="homeRunner">-</strong><span>Runner seleccionado</span></article>
+            <article><strong id="homeKey">No configurada</strong><span>Key local</span></article>
+            <article><strong id="homeHealth">Sin probar</strong><span>Estado API</span></article>
+          </div>
+          <div class="actions">
+            <button id="homeHealthBtn">Probar API</button>
+            <button data-route="explorer" class="secondary route-shortcut">Abrir FileExplorer</button>
+            <button data-route="test" class="secondary route-shortcut">Ir a Test APIs</button>
+          </div>
         </div>
       </section>
 
-      <section class="panel grid-2">
-        <label>
-          API base URL
-          <input id="apiBase" value="/api" />
-        </label>
-        <label>
-          x-agent-key
-          <input id="apiKey" type="password" placeholder="Pega tu AGENT_API_KEY" />
-        </label>
-        <label>
-          Runner target
-          <input id="runnerTarget" value="local-runner-1" />
-        </label>
-        <div class="actions">
-          <button id="saveConfig">Guardar</button>
-          <button id="healthBtn">Probar health</button>
-          <button id="runnersBtn">Ver runners</button>
-          <button id="jobsBtn">Ver jobs</button>
+      <section id="view-test" class="view">
+        <div class="panel grid-2">
+          <label>API base URL<input id="apiBase" value="/api" /></label>
+          <div class="status-card"><span id="status-dot" class="dot"></span><span id="status-text">Sin probar</span></div>
+          <div class="actions full-row">
+            <button id="saveConfig">Guardar</button>
+            <button id="healthBtn">Probar health</button>
+            <button id="runnersBtn">Ver runners</button>
+            <button id="jobsBtn">Ver jobs</button>
+          </div>
         </div>
-      </section>
 
-      <section class="panel">
-        <h2>Crear job</h2>
-        <div class="grid-2">
-          <label>
-            Tipo
-            <select id="jobType">
-              <option>file.list</option>
-              <option>file.read</option>
-              <option>file.write</option>
-              <option>file.mkdir</option>
-              <option>file.search</option>
-              <option>shell.exec</option>
-              <option>git.status</option>
-              <option>git.diff</option>
-              <option>file.delete</option>
-            </select>
-          </label>
-          <label>
-            Nota opcional
-            <input id="jobNote" placeholder="Prueba desde panel" />
-          </label>
-        </div>
-        <label>
-          Payload JSON
-          <textarea id="payload" rows="10">{
+        <div class="panel">
+          <h2>Crear job</h2>
+          <div class="grid-2">
+            <label>Tipo
+              <select id="jobType">
+                <option>file.list</option><option>file.read</option><option>file.write</option><option>file.mkdir</option><option>file.search</option><option>shell.exec</option><option>git.status</option><option>git.diff</option><option>file.delete</option>
+              </select>
+            </label>
+            <label>Nota opcional<input id="jobNote" placeholder="Prueba desde panel" /></label>
+          </div>
+          <label>Payload JSON<textarea id="payload" rows="10">{
   "path": ".",
-  "maxDepth": 2
-}</textarea>
-        </label>
-        <div class="actions">
-          <button id="createJobBtn">Crear job</button>
-          <button id="sampleListBtn">Ejemplo file.list</button>
-          <button id="sampleNodeBtn">Ejemplo node -v</button>
-          <button id="sampleWriteBtn">Ejemplo chain</button>
+  "maxDepth": 1,
+  "maxEntries": 200
+}</textarea></label>
+          <div class="actions">
+            <button id="createJobBtn">Crear job</button>
+            <button id="sampleListBtn" class="secondary">Ejemplo file.list</button>
+            <button id="sampleNodeBtn" class="secondary">Ejemplo node -v</button>
+            <button id="sampleStatusBtn" class="secondary">Ejemplo git.status</button>
+          </div>
         </div>
+
+        <div class="panel"><h2>Resultado</h2><pre id="output">Listo.</pre></div>
       </section>
 
-      <section class="panel">
-        <h2>Resultado</h2>
-        <pre id="output">Listo.</pre>
+      <section id="view-explorer" class="view">
+        <div class="panel explorer-head">
+          <div>
+            <h2>FileExplorer workspace</h2>
+            <p class="muted">Navega, selecciona, descarga, sube y edita archivos del workspace del runner seleccionado.</p>
+          </div>
+          <div class="path-tools">
+            <label>Ruta actual<input id="currentPath" value="." /></label>
+            <button id="goPathBtn">Ir</button>
+            <button id="upBtn" class="secondary">Subir</button>
+          </div>
+        </div>
+
+        <div class="panel toolbar">
+          <label class="checkline"><input id="showHidden" type="checkbox" /> Mostrar ocultos</label>
+          <label class="upload-btn">Subir archivos<input id="uploadFiles" type="file" multiple /></label>
+          <button id="refreshFilesBtn">Refrescar</button>
+          <button id="downloadSelectedBtn" class="secondary">Descargar seleccionados</button>
+          <button id="zipSelectedBtn" class="secondary">ZIP seleccionados</button>
+          <span id="fileCount" class="muted">0 archivos</span>
+        </div>
+
+        <div class="panel table-wrap">
+          <table class="files-table">
+            <thead>
+              <tr><th><input id="selectAll" type="checkbox" /></th><th>Nombre</th><th>Tipo</th><th>Tamaño</th><th>Perm</th><th>Read</th><th>Write</th><th>User</th><th>Group</th><th>Fecha</th><th>Hora</th><th>Acciones</th></tr>
+            </thead>
+            <tbody id="filesBody"><tr><td colspan="12" class="empty">Sin cargar.</td></tr></tbody>
+          </table>
+        </div>
       </section>
     </main>
-    <script src="/app.js"></script>
+
+    <dialog id="keyModal" class="modal">
+      <form method="dialog" class="modal-card">
+        <h2>Configurar Key</h2>
+        <p class="muted">Se guarda en localStorage de este navegador.</p>
+        <label>x-agent-key<input id="apiKey" type="password" placeholder="AGENT_API_KEY" /></label>
+        <div class="actions right"><button id="cancelKeyBtn" value="cancel" class="secondary">Cancelar</button><button id="acceptKeyBtn" value="default">Aceptar</button></div>
+      </form>
+    </dialog>
+
+    <dialog id="editorModal" class="modal wide">
+      <form method="dialog" class="modal-card">
+        <h2 id="editorTitle">Editar archivo</h2>
+        <textarea id="editorText" rows="18"></textarea>
+        <div class="actions right"><button value="cancel" class="secondary">Cerrar</button><button id="saveEditorBtn" value="default">Guardar</button></div>
+      </form>
+    </dialog>
+
+    <div id="toast" class="toast" hidden></div>
+    <script src="/app.js?v=2"></script>
   </body>
 </html>
