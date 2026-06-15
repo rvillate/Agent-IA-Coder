@@ -120,3 +120,16 @@
 .files-table .name-cell{
   min-width:180px!important;
 }
+
+
+/* Hidden file icon translucency */
+.files-table .file-icon{
+  display:inline-block;
+  min-width:1.35em;
+  text-align:center;
+  transition:opacity .15s ease, filter .15s ease;
+}
+.files-table .file-icon.hidden-icon{
+  opacity:.38;
+  filter:saturate(.55);
+}

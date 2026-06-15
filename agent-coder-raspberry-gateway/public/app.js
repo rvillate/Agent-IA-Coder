@@ -184,7 +184,7 @@ function renderFiles() {
     const tr = document.createElement('tr')
     tr.innerHTML = `
       <td><input class="row-check" type="checkbox" ${state.selected.has(item.path) ? 'checked' : ''}></td>
-      <td class="name-cell"><button class="linkish open-item">${fileIcon(item)} ${item.name}</button></td>
+      <td class="name-cell"><button class="linkish open-item"><span class="file-icon ${item.isHidden ? 'hidden-icon' : ''}">${fileIcon(item)}</span> <span class="file-name">${item.name}</span></button></td>
       <td>${item.type}</td><td>${formatSize(item.size)}</td><td>${item.permissions || '-'}</td>
       <td>${canRead(item.permissions) === true ? 'Sí' : canRead(item.permissions) === false ? 'No' : '-'}</td>
       <td>${canWrite(item.permissions) === true ? 'Sí' : canWrite(item.permissions) === false ? 'No' : '-'}</td>
