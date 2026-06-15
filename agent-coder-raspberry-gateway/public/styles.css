@@ -39,3 +39,84 @@
     justify-content:center!important;
   }
 }
+
+
+/* Compact FileExplorer */
+#view-explorer .panel{
+  margin:0!important;
+  padding:0!important;
+  border-radius:0!important;
+}
+#view-explorer .explorer-head{
+  padding:4px!important;
+  gap:4px!important;
+}
+#view-explorer .explorer-head h2,
+#view-explorer .explorer-head p{
+  margin:0!important;
+}
+#view-explorer .toolbar{
+  padding:3px 4px!important;
+  gap:4px!important;
+  min-height:0!important;
+}
+#view-explorer .path-tools{
+  gap:3px!important;
+}
+#view-explorer input,
+#view-explorer button,
+#view-explorer .upload-btn{
+  min-height:24px!important;
+  padding:2px 6px!important;
+  border-radius:4px!important;
+  font-size:12px!important;
+}
+#view-explorer label{
+  gap:1px!important;
+  margin:0!important;
+}
+#view-explorer .table-wrap{
+  margin:0!important;
+  padding:0!important;
+  border:0!important;
+}
+.files-table{
+  border-spacing:0!important;
+  margin:0!important;
+  font-size:11px!important;
+}
+.files-table th,
+.files-table td{
+  padding:1px 3px!important;
+  margin:0!important;
+  line-height:1.1!important;
+  height:20px!important;
+}
+.files-table th{
+  font-size:10px!important;
+}
+.files-table input[type="checkbox"]{
+  width:13px!important;
+  height:13px!important;
+  min-height:13px!important;
+  margin:0!important;
+  padding:0!important;
+}
+.files-table .mini{
+  min-height:18px!important;
+  padding:1px 4px!important;
+  font-size:10px!important;
+  border-radius:3px!important;
+}
+.files-table .row-actions{
+  gap:2px!important;
+}
+.files-table .linkish{
+  padding:0!important;
+  margin:0!important;
+  font-size:11px!important;
+  line-height:1!important;
+}
+.files-table .name-cell{
+  min-width:180px!important;
+}
