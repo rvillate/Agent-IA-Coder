@@ -4,7 +4,7 @@ import path from 'node:path'
 import crypto from 'node:crypto'
 import { spawn } from 'node:child_process'
 
-const DEFAULT_IGNORES = new Set(['node_modules', '.git', 'dist', 'build', '.next', '.angular', 'target', 'coverage', '.idea', '.vscode'])
+const DEFAULT_IGNORES = new Set([])
 const TEXT_EXTENSIONS = new Set(['.js', '.jsx', '.ts', '.tsx', '.mjs', '.cjs', '.json', '.md', '.txt', '.css', '.scss', '.html', '.htm', '.xml', '.yml', '.yaml', '.py', '.java', '.cs', '.sql', '.env', '.sh', '.bat', '.ps1'])
 const SHELL_OPERATOR_PATTERN = /&&|\|\||[|<>;]/
 const DANGEROUS_PATTERN = /(rm\s+-rf|format\s|shutdown|reboot|del\s+\/s|reg\s+delete|diskpart|mkfs|powershell\s+-enc)/i
