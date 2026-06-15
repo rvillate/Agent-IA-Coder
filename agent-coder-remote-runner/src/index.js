@@ -1,5 +1,4 @@
 import os from 'node:os'
-import path from 'node:path'
 import { getConfig } from './config.js'
 import { GatewayClient } from './api.js'
 import { createPathGuard, ensureWorkspace } from './paths.js'
@@ -74,6 +73,36 @@ async function update(job, data) {
   return client.updateJob(job.id, { runnerId: config.runnerId, ...data })
 }
 
+async function fetchJobStatus(jobId) {
+  if (typeof client.getJob === 'function') {
+    const data = await client.getJob(jobId)
+    return data?.job?.status || data?.status || null
+  }
+
+  const base = String(config.gatewayUrl || '').replace(/\/$/, '')
+  const url = `${base}/api/jobs/${jobId}`
+  const headers = {
+    'x-runner-key': config.runnerSharedKey,
+    'x-agent-runner-key': config.runnerSharedKey,
+    authorization: `Bearer ${config.runnerSharedKey}`
+  }
+  const response = await fetch(url, { headers })
+  if (!response.ok) return null
+  const data = await response.json()
+  return data?.job?.status || data?.status || null
+}
+
+function cancelChecker(job) {
+  return async () => {
+    try {
+      const status = await fetchJobStatus(job.id)
+      return status === 'cancel_requested' || status === 'cancelled'
+    } catch {
+      return false
+    }
+  }
+}
+
 async function executeJob(job) {
   const payload = job.payload || {}
   console.log('')
@@ -94,11 +123,12 @@ async function executeJob(job) {
       await update(job, { status: 'running', summary: 'Aprobado localmente. Ejecutando...' })
     }
 
+    const isCancelRequested = cancelChecker(job)
     let result
     switch (job.type) {
       case 'file.list':
         result = await fileList(payload, guard, config)
-        await update(job, { status: 'success', result, summary: 'Listado generado correctamente' })
+        await update(job, { status: 'success', result, summary: 'Listado generado correctamente', truncated: result.truncated })
         break
       case 'file.read':
         result = await fileRead(payload, guard, config)
@@ -121,7 +151,7 @@ async function executeJob(job) {
         await update(job, { status: 'success', result, summary: `Búsqueda finalizada con ${result.total} coincidencias`, truncated: result.truncated })
         break
       case 'shell.exec': {
-        result = await runCommand(payload, guard, config, job.id)
+        result = await runCommand(payload, guard, config, job.id, isCancelRequested)
         await update(job, {
           status: result.status,
           exitCode: result.exitCode,
@@ -136,7 +166,7 @@ async function executeJob(job) {
         break
       }
       case 'git.status': {
-        result = await gitStatus(payload, guard, config, job.id)
+        result = await gitStatus(payload, guard, config, job.id, isCancelRequested)
         await update(job, {
           status: result.status,
           exitCode: result.exitCode,
@@ -150,7 +180,7 @@ async function executeJob(job) {
         break
       }
       case 'git.diff': {
-        result = await gitDiff(payload, guard, config, job.id)
+        result = await gitDiff(payload, guard, config, job.id, isCancelRequested)
         await update(job, {
           status: result.status,
           exitCode: result.exitCode,
@@ -201,11 +231,8 @@ async function main() {
   while (true) {
     try {
       const response = await client.claimNext(config.runnerId)
-      if (response.job) {
-        await executeJob(response.job)
-      } else {
-        await sleep(config.pollIntervalMs)
-      }
+      if (response.job) await executeJob(response.job)
+      else await sleep(config.pollIntervalMs)
     } catch (error) {
       console.error(`[poll] ${error.message}`)
       await sleep(Math.max(config.pollIntervalMs, 5000))

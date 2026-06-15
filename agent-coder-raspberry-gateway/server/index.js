@@ -326,6 +326,26 @@ app.post('/api/runner/claim-next', requireRunnerKey, async (req, res) => {
   res.json({ ok: true, job: claimed })
 })
 
+app.get('/api/runner/jobs/:id/status', requireRunnerKey, (req, res) => {
+  const runnerId = String(req.query.runnerId || req.header('x-runner-id') || '').trim()
+  if (!runnerId) return res.status(400).json({ ok: false, error: 'runnerId requerido' })
+  const job = db.snapshot().jobs[req.params.id]
+  if (!job) return res.status(404).json({ ok: false, error: 'Job no encontrado' })
+  if (job.runnerTarget !== runnerId && job.claimedBy !== runnerId) {
+    return res.status(403).json({ ok: false, error: 'Job no pertenece a este runner' })
+  }
+  res.json({
+    ok: true,
+    job: {
+      id: job.id,
+      status: job.status,
+      runnerTarget: job.runnerTarget,
+      claimedBy: job.claimedBy || null,
+      updatedAt: job.updatedAt || null
+    }
+  })
+})
+
 app.post('/api/runner/jobs/:id/update', requireRunnerKey, async (req, res) => {
   const runnerId = String(req.body?.runnerId || '').trim()
   if (!runnerId) return res.status(400).json({ ok: false, error: 'runnerId requerido' })
