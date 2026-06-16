@@ -97,7 +97,7 @@ await db.init()
 const app = express()
 app.set('trust proxy', true)
 app.use(cors())
-app.use(express.json({ limit: '2mb' }))
+app.use(express.json({ limit: process.env.AGENT_BODY_LIMIT || '150mb' }))
 app.use(express.static(path.join(rootDir, 'public')))
 
 app.get('/api/health', (req, res) => {

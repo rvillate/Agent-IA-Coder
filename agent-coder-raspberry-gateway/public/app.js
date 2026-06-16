@@ -99,6 +99,27 @@ async function createJob(type, payload, note = '') {
   return api('/jobs', { method: 'POST', body: JSON.stringify({ type, runnerTarget: state.runnerTarget, payload, note }) })
 }
 
+function createJobWithUploadProgress(type, payload, note = '', onProgress = () => {}) {
+  return new Promise((resolve, reject) => {
+    const base = String(state.apiBase || '/api').replace(/\/$/, '')
+    const xhr = new XMLHttpRequest()
+    xhr.open('POST', `${base}/jobs`)
+    xhr.setRequestHeader('content-type', 'application/json')
+    if (state.apiKey) xhr.setRequestHeader('x-agent-key', state.apiKey)
+    xhr.upload.onprogress = (event) => {
+      if (event.lengthComputable) onProgress(event.loaded / event.total)
+    }
+    xhr.onload = () => {
+      let data
+      try { data = JSON.parse(xhr.responseText || '{}') } catch { data = xhr.responseText }
+      if (xhr.status >= 200 && xhr.status < 300) resolve(data)
+      else reject(new Error(typeof data === 'object' ? JSON.stringify(data, null, 2) : String(data)))
+    }
+    xhr.onerror = () => reject(new Error('Error de red creando job'))
+    xhr.send(JSON.stringify({ type, runnerTarget: state.runnerTarget, payload, note }))
+  })
+}
+
 async function waitJob(jobId, timeoutMs = 120000) {
   const terminal = new Set(['success', 'error', 'timeout', 'cancelled', 'rejected'])
   const start = Date.now()
@@ -325,19 +346,75 @@ async function saveEditor(event) {
   await loadFiles()
 }
 
+function closeActionsModal() {
+  if ($('actionsModal')?.open) $('actionsModal').close()
+}
+
+function showCreateFolderModal() {
+  closeActionsModal()
+  $('newFolderName').value = ''
+  $('createFolderPath').textContent = `Ruta actual: ${state.currentPath || '.'}`
+  $('createFolderModal').showModal()
+  setTimeout(() => $('newFolderName').focus(), 50)
+}
+
+function setUploadProgress(percent, text, detail = '') {
+  const safe = Math.max(0, Math.min(100, Math.round(percent)))
+  $('uploadProgressBar').value = safe
+  $('uploadProgressText').textContent = `${text} · ${safe}%`
+  $('uploadProgressDetail').textContent = detail || `${safe}%`
+}
+
+async function createFolder(event) {
+  event.preventDefault()
+  const input = $('newFolderName')
+  const name = String(input.value || '').trim().replace(/^\/+|\/+$/g, '')
+  if (!name) return toast('Escribe el nombre de la carpeta')
+  if (name.includes('..') || name.includes('\\')) return toast('Nombre de carpeta inválido')
+  const target = joinPath(state.currentPath, name)
+  const job = await runJob('file.mkdir', { path: target }, `Crear carpeta ${target}`)
+  if (job.status !== 'success') throw new Error(job.stderrTail || job.error || job.summary || `No se pudo crear ${target}`)
+  input.value = ''
+  $('createFolderModal').close()
+  toast(`Carpeta creada: ${target}`)
+  await loadFiles()
+}
+
 async function uploadFiles(event) {
   const files = Array.from(event.target.files || [])
+  closeActionsModal()
   if (!files.length) return
-  for (const file of files) {
-    const bytes = new Uint8Array(await file.arrayBuffer())
-    const target = joinPath(state.currentPath, file.name)
-    const job = await runJob('file.write', { path: target, contentBase64: bytesToBase64(bytes), backup: true, atomic: true }, `Subir ${file.name}`)
-    if (job.status !== 'success') throw new Error(job.stderrTail || job.error || job.summary || `No se pudo subir ${file.name}`)
+  const totalBytes = files.reduce((sum, file) => sum + file.size, 0) || files.length
+  let completedBytes = 0
+  $('uploadProgressModal').showModal()
+  setUploadProgress(0, `Preparando ${files.length} archivo(s)...`)
+  try {
+    for (let i = 0; i < files.length; i += 1) {
+      const file = files[i]
+      const basePercent = (completedBytes / totalBytes) * 100
+      setUploadProgress(basePercent, `Leyendo ${file.name}`, `Archivo ${i + 1} de ${files.length}`)
+      const bytes = new Uint8Array(await file.arrayBuffer())
+      const target = joinPath(state.currentPath, file.name)
+      const payload = { path: target, contentBase64: bytesToBase64(bytes), backup: true, atomic: true }
+      const created = await createJobWithUploadProgress('file.write', payload, `Subir ${file.name}`, (ratio) => {
+        const current = file.size || 1
+        const percent = ((completedBytes + current * Math.min(0.95, ratio * 0.95)) / totalBytes) * 100
+        setUploadProgress(percent, `Subiendo ${file.name}`, `${Math.round(percent)}% · Archivo ${i + 1} de ${files.length}`)
+      })
+      const job = await waitJob(created.job.id)
+      if (job.status !== 'success') throw new Error(job.stderrTail || job.error || job.summary || `No se pudo subir ${file.name}`)
+      completedBytes += file.size || 1
+      setUploadProgress((completedBytes / totalBytes) * 100, `Completado ${file.name}`, `Archivo ${i + 1} de ${files.length}`)
+    }
+    event.target.value = ''
+    setUploadProgress(100, 'Upload completado', '100%')
+    toast(`${files.length} archivo(s) subido(s)`)
+    await loadFiles()
+    setTimeout(() => { if ($('uploadProgressModal')?.open) $('uploadProgressModal').close() }, 700)
+  } catch (error) {
+    setUploadProgress($('uploadProgressBar').value || 0, 'Error subiendo archivos', error.message)
+    throw error
   }
-  event.target.value = ''
-  $('actionsModal').close()
-  toast(`${files.length} archivo(s) subido(s)`)
-  await loadFiles()
 }
 
 async function deleteSelected() {
@@ -602,12 +679,15 @@ function wire() {
   $('refreshServerBtn').onclick = () => loadServerStats().catch((e) => toast(e.message))
   $('upBtn').onclick = () => openDir(parentPath(state.currentPath))
   $('actionsBtn').onclick = () => $('actionsModal').showModal()
-  $('refreshFilesBtn').onclick = (e) => { e.preventDefault(); loadFiles().catch((err) => toast(err.message)) }
+  $('refreshFilesBtn').onclick = (e) => { e.preventDefault(); closeActionsModal(); loadFiles().catch((err) => toast(err.message)) }
   $('showHidden').onchange = () => { state.showHidden = $('showHidden').checked; saveState(); loadFiles().catch((e) => toast(e.message)) }
   $('selectAll').onchange = (e) => { state.selected = new Set(e.target.checked ? state.files.map((f) => f.path) : []); renderFiles() }
-  $('downloadSelectedBtn').onclick = (e) => { e.preventDefault(); downloadSelected().catch((err) => toast(err.message)) }
-  $('zipSelectedBtn').onclick = (e) => { e.preventDefault(); zipSelected().catch((err) => toast(err.message)) }
-  $('deleteSelectedBtn').onclick = (e) => { e.preventDefault(); deleteSelected().catch((err) => toast(err.message)) }
+  $('downloadSelectedBtn').onclick = (e) => { e.preventDefault(); closeActionsModal(); downloadSelected().catch((err) => toast(err.message)) }
+  $('zipSelectedBtn').onclick = (e) => { e.preventDefault(); closeActionsModal(); zipSelected().catch((err) => toast(err.message)) }
+  $('deleteSelectedBtn').onclick = (e) => { e.preventDefault(); closeActionsModal(); deleteSelected().catch((err) => toast(err.message)) }
+  $('showCreateFolderBtn').onclick = (e) => { e.preventDefault(); showCreateFolderModal() }
+  $('createFolderBtn').onclick = (e) => createFolder(e).catch((error) => toast(error.message))
+  $('newFolderName').onkeydown = (e) => { if (e.key === 'Enter') createFolder(e).catch((error) => toast(error.message)) }
   $('uploadFiles').onchange = (e) => uploadFiles(e).catch((error) => toast(error.message))
   $('saveEditorBtn').onclick = (e) => saveEditor(e).catch((error) => toast(error.message))
   $('openTextBtn').onclick = (e) => openPendingText(e).catch((error) => toast(error.message))

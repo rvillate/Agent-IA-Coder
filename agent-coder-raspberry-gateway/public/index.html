@@ -4,7 +4,7 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Agent Coder Gateway</title>
-    <link rel="stylesheet" href="/styles.css?v=4" />
+    <link rel="stylesheet" href="/styles.css?v=7" />
   </head>
   <body>
     <nav class="topbar">
@@ -181,12 +181,31 @@
         <h2>Acciones FileExplorer</h2>
         <p class="muted">Selecciona una acción para la ruta actual o los archivos marcados.</p>
         <label class="checkline"><input id="showHidden" type="checkbox" /> Mostrar ocultos</label>
+        <button id="showCreateFolderBtn" value="cancel">Crear carpeta</button>
         <label class="upload-btn modal-upload">Subir archivos<input id="uploadFiles" type="file" multiple /></label>
         <button id="refreshFilesBtn" value="cancel">Refrescar</button>
         <button id="downloadSelectedBtn" value="cancel" class="secondary">Descargar seleccionados</button>
         <button id="zipSelectedBtn" value="cancel" class="secondary">ZIP seleccionados</button>
         <button id="deleteSelectedBtn" value="cancel" class="danger">Eliminar seleccionados</button>
         <div class="actions right"><button value="cancel" class="secondary">Cerrar</button></div>
+      </form>
+    </dialog>
+
+    <dialog id="createFolderModal" class="modal">
+      <form method="dialog" class="modal-card">
+        <h2>Crear carpeta</h2>
+        <p id="createFolderPath" class="muted"></p>
+        <label>Nombre de la carpeta<input id="newFolderName" placeholder="nombre-carpeta" autocomplete="off" /></label>
+        <div class="actions right"><button value="cancel" class="secondary">Cancelar</button><button id="createFolderBtn" value="default">Crear</button></div>
+      </form>
+    </dialog>
+
+    <dialog id="uploadProgressModal" class="modal">
+      <form method="dialog" class="modal-card">
+        <h2>Subiendo archivos</h2>
+        <p id="uploadProgressText" class="muted">Preparando...</p>
+        <progress id="uploadProgressBar" value="0" max="100"></progress>
+        <p id="uploadProgressDetail" class="muted">0%</p>
       </form>
     </dialog>
 
@@ -208,6 +227,6 @@
     </dialog>
 
     <div id="toast" class="toast" hidden></div>
-    <script src="/app.js?v=4"></script>
+    <script src="/app.js?v=7"></script>
   </body>
 </html>
