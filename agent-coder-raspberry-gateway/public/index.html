@@ -4,7 +4,7 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Agent Coder Gateway</title>
-    <link rel="stylesheet" href="/styles.css?v=7" />
+    <link rel="stylesheet" href="/styles.css?v=11" />
   </head>
   <body>
     <nav class="topbar">
@@ -35,6 +35,7 @@
           <button class="nav-btn" data-route="test">Test APIs</button>
           <button class="nav-btn" data-route="explorer">FileExplorer workspace</button>
           <button class="nav-btn" data-route="server">Servidor</button>
+          <button class="nav-btn" data-route="services">Servicios admin</button>
         </div>
         <div class="desktop-runner runner-box">
           <button id="keyBtn" class="secondary">Key</button>
@@ -62,6 +63,7 @@
             <button data-route="explorer" class="secondary route-shortcut">Abrir FileExplorer</button>
             <button data-route="test" class="secondary route-shortcut">Ir a Test APIs</button>
             <button data-route="server" class="secondary route-shortcut">Ver servidor</button>
+            <button data-route="services" class="secondary route-shortcut">Servicios admin</button>
           </div>
         </div>
       </section>
@@ -165,7 +167,69 @@
           </table>
         </div>
       </section>
+
+      <section id="view-services" class="view">
+        <div class="panel explorer-head">
+          <div>
+            <h2>Servicios admin</h2>
+            <p class="muted">Administra servicios del sistema y procesos manuales. Gateway y Runner son críticos para esta comunicación.</p>
+          </div>
+          <div class="actions">
+            <button id="refreshServicesBtn">Refrescar</button>
+            <button id="openStartServiceBtn" class="secondary">Iniciar servicio</button>
+            <button id="openCreateServiceBtn" class="secondary">Crear servicio manual</button>
+          </div>
+        </div>
+
+        <div class="panel toolbar server-summary">
+          <span id="servicesStamp" class="muted">Sin cargar</span>
+          <span id="servicesInfo" class="muted">Servicios: -</span>
+        </div>
+
+        <div class="panel table-wrap">
+          <table class="stats-table services-table">
+            <thead><tr><th>Acciones</th><th>Servicio</th><th>Tipo</th><th>Estado</th><th>Detalle</th></tr></thead>
+            <tbody id="servicesBody"><tr><td colspan="5" class="empty">Sin cargar.</td></tr></tbody>
+          </table>
+        </div>
+      </section>
+
     </main>
+
+
+
+    <dialog id="startServiceModal" class="modal">
+      <form method="dialog" class="modal-card">
+        <h2>Iniciar servicio</h2>
+        <p class="muted">Selecciona un servicio disponible para iniciar.</p>
+        <label>Servicio<select id="startServiceSelect"></select></label>
+        <div class="actions right"><button value="cancel" class="secondary">Cancelar</button><button id="confirmStartServiceBtn" value="default">Iniciar</button></div>
+      </form>
+    </dialog>
+
+    <dialog id="confirmServiceModal" class="modal">
+      <form method="dialog" class="modal-card">
+        <h2 id="confirmServiceTitle">Confirmar acción</h2>
+        <p id="confirmServiceText" class="muted"></p>
+        <p id="confirmServiceCritical" class="danger-note" hidden></p>
+        <div class="actions right"><button value="cancel" class="secondary">Cancelar</button><button id="confirmServiceActionBtn" value="default" class="danger">Confirmar</button></div>
+      </form>
+    </dialog>
+
+    <dialog id="createServiceModal" class="modal wide">
+      <form method="dialog" class="modal-card">
+        <h2>Crear servicio manual</h2>
+        <p class="muted">Crea un proceso administrado por la consola. Se guardará para iniciar, detener, reiniciar o eliminar.</p>
+        <div class="grid-2">
+          <label>Nombre<input id="manualServiceName" placeholder="Mi app local" autocomplete="off" /></label>
+          <label>Ruta de trabajo<input id="manualServiceCwd" placeholder="/home/pi/Proyectos/mi-app" autocomplete="off" /></label>
+        </div>
+        <label>Comando<textarea id="manualServiceCommand" rows="4" placeholder="npm run dev -- --host 127.0.0.1 --port 3000"></textarea></label>
+        <label class="checkline"><input id="manualServiceStartNow" type="checkbox" checked /> Iniciar después de crear</label>
+        <div class="actions right"><button value="cancel" class="secondary">Cancelar</button><button id="saveManualServiceBtn" value="default">Guardar</button></div>
+      </form>
+    </dialog>
+
 
     <dialog id="keyModal" class="modal">
       <form method="dialog" class="modal-card">
@@ -227,6 +291,6 @@
     </dialog>
 
     <div id="toast" class="toast" hidden></div>
-    <script src="/app.js?v=7"></script>
+    <script src="/app.js?v=11"></script>
   </body>
 </html>

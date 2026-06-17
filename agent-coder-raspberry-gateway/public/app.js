@@ -13,7 +13,9 @@ let state = {
   selected: new Set(),
   editingPath: '',
   pendingTextPath: '',
-  showHidden: false
+  showHidden: false,
+  services: [],
+  pendingServiceAction: null
 }
 
 try { state = { ...state, ...JSON.parse(localStorage.getItem(storeKey) || '{}') } } catch {}
@@ -76,6 +78,7 @@ function setRoute(route) {
   closeMobileMenu()
   if (route === 'explorer' && state.files.length === 0) loadFiles().catch((error) => toast(error.message))
   if (route === 'server') loadServerStats().catch((error) => toast(error.message))
+  if (route === 'services') loadServices().catch((error) => toast(error.message))
 }
 
 function apiHeaders(hasBody = false) {
@@ -649,6 +652,270 @@ async function loadServerStats() {
   renderServerStats(JSON.parse(raw))
 }
 
+
+const servicesAdminPython = String.raw`
+import json, os, re, subprocess, time
+CONFIG='/home/pi/Agent-IA-Coder/agent-coder-runs/services.json'
+RUN_DIR='/home/pi/Agent-IA-Coder/agent-coder-runs'
+os.makedirs(RUN_DIR, exist_ok=True)
+SYSTEMD=[
+  {'id':'systemd:agent-coder-gateway.service','name':'agent-coder-gateway.service','kind':'systemd','critical':True,'description':'Gateway web/API central. Detenerlo corta esta consola.'},
+  {'id':'systemd:agent-coder-runner.service','name':'agent-coder-runner.service','kind':'systemd','critical':True,'description':'Runner remoto usado para ejecutar jobs. Detenerlo corta acciones remotas.'},
+  {'id':'systemd:agent-coder-cloudflared.service','name':'agent-coder-cloudflared.service','kind':'systemd','critical':False,'description':'Túnel Cloudflare del gateway.'},
+  {'id':'systemd:agent-coder-disk-monitor.timer','name':'agent-coder-disk-monitor.timer','kind':'systemd','critical':False,'description':'Timer de monitoreo de disco.'},
+  {'id':'systemd:agent-coder-disk-monitor.service','name':'agent-coder-disk-monitor.service','kind':'systemd','critical':False,'description':'Servicio de monitoreo de disco.'},
+]
+def run(cmd, timeout=8):
+    p=subprocess.run(cmd, capture_output=True, text=True, timeout=timeout)
+    return p.stdout.strip(), p.stderr.strip(), p.returncode
+
+def slug(s):
+    s=re.sub(r'[^a-zA-Z0-9_.-]+','-',s.strip()).strip('-').lower()
+    return s or 'manual-service'
+
+def load_manual():
+    try:
+        with open(CONFIG,'r',encoding='utf-8') as f: data=json.load(f)
+        manual=data.get('services',[]) if isinstance(data,dict) else []
+        deleted_defaults=set(data.get('deletedDefaultIds',[]) if isinstance(data,dict) else [])
+    except Exception:
+        manual=[]
+        deleted_defaults=set()
+    defaults=[]
+    kit_pid='/home/pi/Proyectos/KITs/vite-server.pid'
+    if os.path.exists('/home/pi/Proyectos/KITs/package.json'):
+        defaults.append({'id':'manual:kits-vite-local','name':'KITs Vite local','kind':'manual','cwd':'/home/pi/Proyectos/KITs','command':'node node_modules/vite/bin/vite.js --host 0.0.0.0 --port 5173','pidFile':kit_pid,'outLog':'/home/pi/Proyectos/KITs/vite-server.out.log','errLog':'/home/pi/Proyectos/KITs/vite-server.err.log','critical':False,'isDefault':True,'description':'Proyecto KITs extraído y levantado en local.'})
+    ids={x.get('id') for x in manual}
+    for d in defaults:
+        if d['id'] not in ids and d['id'] not in deleted_defaults:
+            manual.append(d)
+    return manual
+
+def manual_status(s):
+    pid=None
+    pid_file=s.get('pidFile') or os.path.join(RUN_DIR, s.get('id','manual').replace(':','-')+'.pid')
+    try:
+        pid=int(open(pid_file).read().strip())
+    except Exception:
+        pid=None
+    active=False
+    detail='Sin PID'
+    if pid:
+        active=os.path.exists(f'/proc/{pid}')
+        detail=f'PID {pid}' if active else f'PID {pid} detenido'
+    return 'active' if active else 'inactive', detail
+
+def systemd_status(s):
+    name=s['name']
+    active,_,_=run(['systemctl','is-active',name])
+    enabled,_,_=run(['systemctl','is-enabled',name])
+    sub,_,_=run(['systemctl','show',name,'--property=SubState','--value'])
+    return active or 'unknown', f'{enabled or "unknown"} / {sub or "unknown"}'
+
+services=[]
+for s in SYSTEMD:
+    active, detail=systemd_status(s)
+    services.append({**s,'status':active,'detail':detail})
+for s in load_manual():
+    active, detail=manual_status(s)
+    services.append({**s,'status':active,'detail':detail})
+print(json.dumps({'services':services,'stamp':time.strftime('%Y-%m-%d %H:%M:%S %Z'),'configPath':CONFIG}, ensure_ascii=False))
+`
+
+function serviceStatusLabel(status) {
+  if (status === 'active') return 'Activo'
+  if (status === 'inactive') return 'Detenido'
+  if (status === 'failed') return 'Fallido'
+  return status || '-'
+}
+
+function serviceStatusClass(status) {
+  if (status === 'active') return 'ok'
+  if (status === 'failed') return 'bad'
+  return ''
+}
+
+function closeServiceMenus(except = null) {
+  $$('.service-actions-menu.open').forEach((menu) => {
+    if (menu !== except) {
+      menu.classList.remove('open')
+      menu.style.top = ''
+      menu.style.left = ''
+      menu.style.right = ''
+    }
+  })
+}
+
+function positionServiceMenu(menu, button) {
+  const rect = button.getBoundingClientRect()
+  menu.classList.add('open')
+  const menuWidth = Math.max(menu.offsetWidth || 0, 138)
+  const gap = 4
+  let left = rect.left
+  if (left + menuWidth > window.innerWidth - 8) left = Math.max(8, window.innerWidth - menuWidth - 8)
+  let top = rect.bottom + gap
+  const menuHeight = menu.offsetHeight || 132
+  if (top + menuHeight > window.innerHeight - 8) top = Math.max(8, rect.top - menuHeight - gap)
+  menu.style.left = `${Math.round(left)}px`
+  menu.style.top = `${Math.round(top)}px`
+  menu.style.right = 'auto'
+}
+
+function renderServices(data) {
+  state.services = data.services || []
+  const body = $('servicesBody')
+  $('servicesStamp').textContent = `Actualizado: ${data.stamp || '-'}`
+  $('servicesInfo').textContent = `Servicios: ${state.services.length}`
+  body.innerHTML = ''
+  if (!state.services.length) {
+    body.innerHTML = '<tr><td colspan="5" class="empty">Sin servicios.</td></tr>'
+    return
+  }
+  for (const svc of state.services) {
+    const tr = document.createElement('tr')
+    const critical = svc.critical ? '<span class="service-badge danger-badge">Crítico</span>' : ''
+    const meta = svc.kind === 'manual' ? `${escapeHtml(svc.cwd || '-')}<br><code>${escapeHtml(svc.command || '')}</code>` : escapeHtml(svc.description || '')
+    tr.innerHTML = `
+      <td class="service-actions-cell">
+        <div class="service-actions-wrap">
+          <button class="service-menu-btn" type="button" aria-label="Abrir acciones de ${escapeHtml(svc.name)}" aria-expanded="false">
+            <span></span><span></span><span></span>
+          </button>
+          <div class="service-actions-menu" role="menu"></div>
+        </div>
+      </td>
+      <td><strong>${escapeHtml(svc.name)}</strong> ${critical}<br><span class="muted">${escapeHtml(svc.id)}</span></td>
+      <td>${svc.kind === 'manual' ? 'Manual' : 'Systemd'}</td>
+      <td><span class="dot ${serviceStatusClass(svc.status)}"></span> ${serviceStatusLabel(svc.status)}</td>
+      <td>${escapeHtml(svc.detail || '-')}<br><span class="muted">${meta}</span></td>`
+    const menuBtn = tr.querySelector('.service-menu-btn')
+    const menu = tr.querySelector('.service-actions-menu')
+    const addAction = (label, action, className = '', disabled = false) => {
+      const btn = document.createElement('button')
+      btn.type = 'button'
+      btn.textContent = label
+      btn.className = className
+      btn.disabled = disabled
+      btn.onclick = (event) => {
+        event.stopPropagation()
+        closeServiceMenus()
+        requestServiceAction(action, svc.id)
+      }
+      menu.appendChild(btn)
+    }
+    addAction('Iniciar', 'start', '', svc.status === 'active')
+    addAction('Detener', 'stop', 'danger-menu-item', svc.status !== 'active')
+    addAction('Reiniciar', 'restart')
+    if (svc.kind === 'manual') addAction('Eliminar', 'delete', 'danger-menu-item')
+    menuBtn.onclick = (event) => {
+      event.stopPropagation()
+      const willOpen = !menu.classList.contains('open')
+      closeServiceMenus(menu)
+      if (willOpen) positionServiceMenu(menu, menuBtn)
+      else menu.classList.remove('open')
+      menuBtn.setAttribute('aria-expanded', String(willOpen))
+    }
+    body.appendChild(tr)
+  }
+}
+
+async function loadServices() {
+  if (!$('servicesBody')) return
+  $('servicesBody').innerHTML = '<tr><td colspan="5" class="empty">Cargando servicios...</td></tr>'
+  const job = await runJob('shell.exec', { command: 'python3', args: ['-c', servicesAdminPython], cwd: '/', timeoutMs: 30000 }, 'Listar servicios admin')
+  if (job.status !== 'success') throw new Error(job.stderrTail || job.error || job.summary || 'No se pudieron listar servicios')
+  renderServices(JSON.parse(job.stdoutTail || '{}'))
+}
+
+function selectedService(id) {
+  return state.services.find((svc) => svc.id === id)
+}
+
+function openStartServiceModal() {
+  const options = state.services.filter((svc) => svc.status !== 'active')
+  const select = $('startServiceSelect')
+  select.innerHTML = ''
+  for (const svc of options) {
+    const opt = document.createElement('option')
+    opt.value = svc.id
+    opt.textContent = `${svc.name} · ${svc.kind === 'manual' ? 'manual' : 'systemd'} · ${serviceStatusLabel(svc.status)}`
+    select.appendChild(opt)
+  }
+  if (!options.length) {
+    const opt = document.createElement('option')
+    opt.value = ''
+    opt.textContent = 'No hay servicios detenidos disponibles'
+    select.appendChild(opt)
+  }
+  $('startServiceModal').showModal()
+}
+
+function requestServiceAction(action, serviceId) {
+  const svc = selectedService(serviceId)
+  if (!svc) return toast('Servicio no encontrado')
+  const labels = { start: 'iniciar', stop: 'detener', restart: 'reiniciar', delete: 'eliminar' }
+  state.pendingServiceAction = { action, serviceId }
+  $('confirmServiceTitle').textContent = `Confirmar ${labels[action] || action}`
+  $('confirmServiceText').textContent = `Vas a ${labels[action] || action} ${svc.name}.`
+  const critical = $('confirmServiceCritical')
+  critical.hidden = !svc.critical
+  critical.textContent = svc.critical ? 'CUIDADO: este servicio es crítico para la comunicación actual. Detener o reiniciar Gateway/Runner puede cortar esta sesión.' : ''
+  $('confirmServiceActionBtn').textContent = labels[action] ? labels[action].toUpperCase() : 'CONFIRMAR'
+  $('confirmServiceModal').showModal()
+}
+
+function actionCommandForService(action, svc) {
+  if (svc.kind === 'systemd') {
+    return `systemctl ${action} ${svc.name}`
+  }
+  const safeJson = JSON.stringify(svc)
+  if (action === 'start') return `python3 - <<'PY'\nimport json, os, subprocess\ns=json.loads(r'''${safeJson}''')\nos.makedirs(os.path.dirname(s.get('pidFile') or '/home/pi/Agent-IA-Coder/agent-coder-runs/x.pid'), exist_ok=True)\nout=s.get('outLog') or ('/home/pi/Agent-IA-Coder/agent-coder-runs/'+s['id'].replace(':','-')+'.out.log')\nerr=s.get('errLog') or ('/home/pi/Agent-IA-Coder/agent-coder-runs/'+s['id'].replace(':','-')+'.err.log')\npidfile=s.get('pidFile') or ('/home/pi/Agent-IA-Coder/agent-coder-runs/'+s['id'].replace(':','-')+'.pid')\ntry:\n    pid=int(open(pidfile).read().strip())\n    os.kill(pid,0)\n    print('Ya estaba activo PID', pid)\n    raise SystemExit(0)\nexcept Exception:\n    pass\ncmd=s['command']; cwd=s.get('cwd') or '/'\np=subprocess.Popen(['bash','-lc',cmd], cwd=cwd, stdout=open(out,'a'), stderr=open(err,'a'), start_new_session=True)\nopen(pidfile,'w').write(str(p.pid))\nprint('Iniciado', s['name'], 'PID', p.pid)\nPY`
+  if (action === 'stop') return `python3 - <<'PY'\nimport json, os, signal, time\ns=json.loads(r'''${safeJson}''')\npidfile=s.get('pidFile') or ('/home/pi/Agent-IA-Coder/agent-coder-runs/'+s['id'].replace(':','-')+'.pid')\ntry:\n    pid=int(open(pidfile).read().strip())\nexcept Exception:\n    print('Sin PID activo'); raise SystemExit(0)\ntry:\n    os.kill(pid, signal.SIGTERM)\n    time.sleep(1)\n    if os.path.exists(f'/proc/{pid}'):\n        os.kill(pid, signal.SIGKILL)\n    print('Detenido PID', pid)\nexcept ProcessLookupError:\n    print('PID no existe', pid)\nPY`
+  if (action === 'restart') return actionCommandForService('stop', svc) + '\n' + actionCommandForService('start', svc)
+  if (action === 'delete') return `python3 - <<'PY'\nimport json, os\nCONFIG='/home/pi/Agent-IA-Coder/agent-coder-runs/services.json'\ns=json.loads(r'''${safeJson}''')\ntry:\n    data=json.load(open(CONFIG,'r',encoding='utf-8'))\nexcept Exception:\n    data={'services':[]}\ndata['services']=[x for x in data.get('services',[]) if x.get('id') != s.get('id')]\nif s.get('isDefault'):\n    deleted=set(data.get('deletedDefaultIds',[]))\n    deleted.add(s.get('id'))\n    data['deletedDefaultIds']=sorted(x for x in deleted if x)\nos.makedirs(os.path.dirname(CONFIG), exist_ok=True)\njson.dump(data, open(CONFIG,'w',encoding='utf-8'), ensure_ascii=False, indent=2)\nprint('Eliminado', s.get('name'))\nPY`
+  throw new Error(`Acción no soportada: ${action}`)
+}
+
+async function executeServiceAction(action, serviceId) {
+  const svc = selectedService(serviceId)
+  if (!svc) throw new Error('Servicio no encontrado')
+  const cmd = actionCommandForService(action, svc)
+  const job = await runJob('shell.exec', { command: 'bash', args: ['-lc', cmd], cwd: '/', timeoutMs: 30000 }, `Servicios admin ${action} ${svc.name}`)
+  if (job.status !== 'success') throw new Error(job.stderrTail || job.error || job.summary || `No se pudo ejecutar ${action}`)
+  toast(job.stdoutTail || `Acción completada: ${action}`)
+  await loadServices()
+}
+
+async function confirmPendingServiceAction(event) {
+  event.preventDefault()
+  const pending = state.pendingServiceAction
+  if (!pending) return
+  $('confirmServiceModal').close()
+  await executeServiceAction(pending.action, pending.serviceId)
+  state.pendingServiceAction = null
+}
+
+async function saveManualService(event) {
+  event.preventDefault()
+  const name = String($('manualServiceName').value || '').trim()
+  const cwd = String($('manualServiceCwd').value || '').trim()
+  const command = String($('manualServiceCommand').value || '').trim()
+  if (!name || !cwd || !command) return toast('Completa nombre, ruta y comando')
+  const startNow = $('manualServiceStartNow').checked
+  const py = `import json, os, re\nCONFIG='/home/pi/Agent-IA-Coder/agent-coder-runs/services.json'\nRUN_DIR='/home/pi/Agent-IA-Coder/agent-coder-runs'\nos.makedirs(RUN_DIR, exist_ok=True)\ndef slug(s): return re.sub(r'[^a-zA-Z0-9_.-]+','-',s.strip()).strip('-').lower() or 'manual-service'\ntry:\n    data=json.load(open(CONFIG,'r',encoding='utf-8'))\nexcept Exception:\n    data={'services':[]}\nname=${JSON.stringify(name)}; cwd=${JSON.stringify(cwd)}; command=${JSON.stringify(command)}\nid='manual:'+slug(name)\nbase=os.path.join(RUN_DIR,id.replace(':','-'))\nsvc={'id':id,'name':name,'kind':'manual','cwd':cwd,'command':command,'pidFile':base+'.pid','outLog':base+'.out.log','errLog':base+'.err.log','critical':False,'description':'Servicio manual creado desde Gateway'}\ndata['services']=[x for x in data.get('services',[]) if x.get('id') != id]+[svc]\njson.dump(data, open(CONFIG,'w',encoding='utf-8'), ensure_ascii=False, indent=2)\nprint(json.dumps(svc, ensure_ascii=False))`
+  const job = await runJob('shell.exec', { command: 'python3', args: ['-c', py], cwd: '/', timeoutMs: 30000 }, `Crear servicio manual ${name}`)
+  if (job.status !== 'success') throw new Error(job.stderrTail || job.error || job.summary || 'No se pudo guardar servicio')
+  $('createServiceModal').close()
+  $('manualServiceName').value = ''; $('manualServiceCwd').value = ''; $('manualServiceCommand').value = ''
+  await loadServices()
+  if (startNow) {
+    const svc = JSON.parse(job.stdoutTail || '{}')
+    await executeServiceAction('start', svc.id)
+  } else {
+    toast('Servicio manual guardado')
+  }
+}
+
 function wire() {
   syncHeader()
   setRoute(state.route || 'home')
@@ -677,6 +944,15 @@ function wire() {
   $('sampleStatusBtn').onclick = () => { $('jobType').value = 'git.status'; $('payload').value = JSON.stringify({ path: '.', timeoutMs: 30000 }, null, 2) }
   $('goPathBtn').onclick = () => loadFiles().catch((e) => toast(e.message))
   $('refreshServerBtn').onclick = () => loadServerStats().catch((e) => toast(e.message))
+  $('refreshServicesBtn').onclick = () => loadServices().catch((e) => toast(e.message))
+  $('openStartServiceBtn').onclick = () => openStartServiceModal()
+  $('confirmStartServiceBtn').onclick = (e) => { e.preventDefault(); const id = $('startServiceSelect').value; $('startServiceModal').close(); if (id) requestServiceAction('start', id) }
+  $('openCreateServiceBtn').onclick = () => $('createServiceModal').showModal()
+  $('confirmServiceActionBtn').onclick = (e) => confirmPendingServiceAction(e).catch((error) => toast(error.message))
+  $('saveManualServiceBtn').onclick = (e) => saveManualService(e).catch((error) => toast(error.message))
+  document.addEventListener('click', () => closeServiceMenus())
+  window.addEventListener('scroll', () => closeServiceMenus(), true)
+  window.addEventListener('resize', () => closeServiceMenus())
   $('upBtn').onclick = () => openDir(parentPath(state.currentPath))
   $('actionsBtn').onclick = () => $('actionsModal').showModal()
   $('refreshFilesBtn').onclick = (e) => { e.preventDefault(); closeActionsModal(); loadFiles().catch((err) => toast(err.message)) }

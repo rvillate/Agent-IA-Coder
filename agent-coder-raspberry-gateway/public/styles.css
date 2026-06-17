@@ -208,3 +208,91 @@
   font-weight:800;
   word-break:break-word;
 }
+
+
+/* Services admin */
+.services-table{min-width:980px}
+.services-table td:nth-child(1){min-width:240px}
+.services-table td:nth-child(4){white-space:normal;min-width:300px}
+.services-actions{gap:3px!important;flex-wrap:wrap}
+.service-badge{display:inline-flex;align-items:center;border-radius:999px;padding:1px 6px;font-size:10px;font-weight:900;margin-left:4px;background:#e2e8f0;color:#0f172a}
+.danger-badge{background:#fee2e2;color:#991b1b}
+.danger-note{margin:0;padding:10px;border:1px solid #fecaca;background:#fef2f2;color:#991b1b;border-radius:10px;font-weight:900}
+#view-services .panel{margin:0!important;border-radius:0!important}
+#view-services .explorer-head{padding:4px!important}
+#view-services h2,#view-services p{margin:0!important}
+#view-services .toolbar{padding:3px 4px!important}
+#view-services button{min-height:24px!important;padding:2px 6px!important;border-radius:4px!important;font-size:12px!important}
+
+
+/* Services admin action dropdown */
+.services-table th:first-child,
+.services-table td:first-child{
+  width:54px!important;
+  min-width:54px!important;
+  max-width:54px!important;
+  text-align:center;
+  overflow:visible!important;
+}
+.services-table td:nth-child(2){min-width:240px;font-weight:900;color:#334155}
+.services-table td:nth-child(3){width:100px;font-weight:800}
+.services-table td:nth-child(5){white-space:normal;min-width:300px}
+.service-actions-cell{position:relative!important;z-index:2}
+.service-actions-wrap{position:relative;display:inline-flex;align-items:center;justify-content:center}
+.service-menu-btn{
+  width:28px!important;
+  height:26px!important;
+  min-height:26px!important;
+  min-width:28px!important;
+  padding:0!important;
+  border-radius:8px!important;
+  border:1px solid #cbd5e1!important;
+  background:#fff!important;
+  box-shadow:0 1px 4px rgba(15,23,42,.08)!important;
+  display:inline-flex!important;
+  flex-direction:column!important;
+  gap:3px!important;
+}
+.service-menu-btn:hover{background:#f8fafc!important}
+.service-menu-btn span{
+  display:block;
+  width:15px;
+  height:2px;
+  border-radius:999px;
+  background:#0f172a;
+}
+.service-actions-menu{
+  display:none;
+  position:fixed;
+  top:auto;
+  left:auto;
+  z-index:99999;
+  min-width:138px;
+  padding:5px;
+  border:1px solid #cbd5e1;
+  border-radius:10px;
+  background:#fff;
+  box-shadow:0 14px 36px rgba(15,23,42,.18);
+}
+.service-actions-menu.open{display:grid;gap:4px}
+.service-actions-menu button{
+  width:100%;
+  justify-content:flex-start!important;
+  min-height:28px!important;
+  padding:5px 8px!important;
+  border-radius:7px!important;
+  background:#f1f5f9!important;
+  color:#0f172a!important;
+  font-size:12px!important;
+}
+.service-actions-menu button:hover{background:#e2e8f0!important}
+.service-actions-menu button:disabled{opacity:.45;cursor:not-allowed}
+.service-actions-menu .danger-menu-item{background:#fee2e2!important;color:#991b1b!important}
+.service-actions-menu .danger-menu-item:hover{background:#fecaca!important}
+
+#view-services .table-wrap{overflow:auto!important}
+#view-services .stats-table,
+#view-services .stats-table tbody,
+#view-services .stats-table tr,
+#view-services .stats-table td{overflow:visible!important}
+.service-actions-menu.open{display:grid!important;gap:4px!important;isolation:isolate}
