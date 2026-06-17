@@ -36,6 +36,27 @@ function parseList(value, fallback = []) {
     .filter(Boolean)
 }
 
+function parsePathList(value, fallback = []) {
+  const raw = value == null || value === '' ? fallback.join(',') : String(value)
+  return raw
+    .split(/[|,;]/)
+    .map((x) => x.trim())
+    .filter(Boolean)
+}
+
+function uniqueResolvedPaths(paths) {
+  const seen = new Set()
+  const result = []
+  for (const item of paths) {
+    const resolved = path.resolve(item)
+    const key = process.platform === 'win32' ? resolved.toLowerCase() : resolved
+    if (seen.has(key)) continue
+    seen.add(key)
+    result.push(resolved)
+  }
+  return result
+}
+
 export function loadDotEnv(file = '.env') {
   const target = path.resolve(process.cwd(), file)
   if (!fs.existsSync(target)) return
@@ -56,7 +77,10 @@ export function loadDotEnv(file = '.env') {
 
 export function getConfig() {
   loadDotEnv()
-  const workspaceRoot = path.resolve(process.env.WORKSPACE_ROOT || 'C:/agent-workspace')
+  const workspaceRoots = uniqueResolvedPaths(
+    parsePathList(process.env.WORKSPACE_ROOTS, [process.env.WORKSPACE_ROOT || 'C:/agent-workspace'])
+  )
+  const workspaceRoot = workspaceRoots[0]
   const gatewayUrl = (process.env.GATEWAY_URL || 'http://localhost:8787/api').replace(/\/$/, '')
   const allowSensitiveCommands = parseBoolean(process.env.RUNNER_ALLOW_SENSITIVE_COMMANDS, true)
   const commandAllowlist = parseList(process.env.COMMAND_ALLOWLIST, DEVELOPMENT_COMMANDS)
@@ -70,6 +94,7 @@ export function getConfig() {
     runnerSharedKey: process.env.RUNNER_SHARED_KEY || '',
     runnerId: process.env.RUNNER_ID || 'local-runner-1',
     workspaceRoot,
+    workspaceRoots,
     requireLocalApproval: parseBoolean(process.env.RUNNER_REQUIRE_LOCAL_APPROVAL, true),
     allowAllCommands: parseBoolean(process.env.RUNNER_ALLOW_ALL_COMMANDS, true),
     allowDangerousCommands: parseBoolean(process.env.RUNNER_ALLOW_DANGEROUS_COMMANDS, true),

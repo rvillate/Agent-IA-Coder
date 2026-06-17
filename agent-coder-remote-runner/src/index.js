@@ -17,7 +17,7 @@ import {
 
 const config = getConfig()
 const client = new GatewayClient(config)
-const guard = createPathGuard(config.workspaceRoot)
+const guard = createPathGuard(config.workspaceRoots)
 
 const capabilities = [
   'shell.exec',
@@ -62,6 +62,7 @@ function runnerPayload(status = 'online') {
     runnerId: config.runnerId,
     status,
     workspaceRoot: config.workspaceRoot,
+    workspaceRoots: config.workspaceRoots,
     platform: `${process.platform}-${process.arch}`,
     hostname: os.hostname(),
     version: '1.0.0',
@@ -213,11 +214,12 @@ async function main() {
     console.error('RUNNER_SHARED_KEY no está configurada. Edita .env antes de iniciar.')
     process.exit(1)
   }
-  await ensureWorkspace(config.workspaceRoot)
+  await ensureWorkspace(config.workspaceRoots)
   console.log('Agent Coder Remote Runner')
   console.log(`Runner ID: ${config.runnerId}`)
   console.log(`Gateway: ${config.gatewayUrl}`)
-  console.log(`Workspace: ${config.workspaceRoot}`)
+  console.log(`Workspace principal: ${config.workspaceRoot}`)
+  console.log(`Workspaces permitidos: ${config.workspaceRoots.join(', ')}`)
   console.log(`Aprobación local: ${config.requireLocalApproval}`)
   console.log(`Comandos peligrosos: ${config.allowDangerousCommands}`)
 

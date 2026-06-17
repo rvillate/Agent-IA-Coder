@@ -401,3 +401,47 @@ Flags principales del `.env`:
 - `RUNNER_ALLOW_DELETE=true`: habilita `file.delete`.
 
 Comandos de desarrollo incluidos en la allowlist base: Node/NPM, Git, ripgrep/grep/findstr, Java/Maven/Gradle, .NET, Python/pytest, Go, Rust/Cargo, TypeScript, ESLint, Prettier, Vite, Next, Jest, Vitest y Playwright.
+
+## 16. Varios workspaces en un mismo runner
+
+El runner puede permitir varias raíces locales sin crear runners adicionales. Mantiene compatibilidad con `WORKSPACE_ROOT` y agrega `WORKSPACE_ROOTS`.
+
+Configuración simple, una sola raíz:
+
+```env
+WORKSPACE_ROOT=/home/pi/Agent-IA-Coder
+```
+
+Configuración con varias raíces:
+
+```env
+WORKSPACE_ROOTS=/home/pi/Agent-IA-Coder,/home/pi/Proyectos/KITs
+```
+
+También se aceptan `;` o `|` como separadores:
+
+```env
+WORKSPACE_ROOTS=/home/pi/Agent-IA-Coder;/home/pi/Proyectos/KITs
+WORKSPACE_ROOTS=/home/pi/Agent-IA-Coder|/home/pi/Proyectos/KITs
+```
+
+Reglas:
+
+- Si `WORKSPACE_ROOTS` está definido, esa lista manda sobre `WORKSPACE_ROOT`.
+- La primera ruta de `WORKSPACE_ROOTS` queda como workspace principal.
+- Las rutas relativas se resuelven contra el workspace principal.
+- Las rutas absolutas se aceptan si están dentro de cualquiera de los workspaces permitidos.
+- El runner reporta al gateway `workspaceRoot` y también `workspaceRoots`.
+
+Ejemplo de uso desde un job:
+
+```json
+{
+  "type": "file.list",
+  "runnerTarget": "master-server",
+  "payload": {
+    "path": "/home/pi/Proyectos/KITs",
+    "maxDepth": 1
+  }
+}
+```
