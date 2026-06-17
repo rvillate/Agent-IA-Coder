@@ -23,6 +23,11 @@ const SENSITIVE_COMMANDS = [
   'docker', 'docker-compose', 'kubectl'
 ]
 
+const DEFAULT_IGNORES = [
+  'node_modules', '.git', 'dist', 'build', '.next', '.angular', 'target',
+  'coverage', '.idea', '.vscode', '.cache', '.turbo', 'logs'
+]
+
 function parseBoolean(value, fallback = false) {
   if (value == null || value === '') return fallback
   return ['true', '1', 'yes', 'y', 'on', 'si', 'sí'].includes(String(value).trim().toLowerCase())
@@ -34,12 +39,22 @@ function parsePositiveInteger(value, fallback = 1) {
   return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback
 }
 
+function parseNonNegativeInteger(value, fallback = 0) {
+  if (value == null || value === '') return fallback
+  const parsed = Number.parseInt(String(value).trim(), 10)
+  return Number.isFinite(parsed) && parsed >= 0 ? parsed : fallback
+}
+
 function parseList(value, fallback = []) {
   const raw = value == null || value === '' ? fallback.join(',') : String(value)
   return raw
     .split(',')
-    .map((x) => x.trim().toLowerCase())
+    .map((x) => x.trim())
     .filter(Boolean)
+}
+
+function parseLowerList(value, fallback = []) {
+  return parseList(value, fallback).map((x) => x.toLowerCase())
 }
 
 function parsePathList(value, fallback = []) {
@@ -89,11 +104,12 @@ export function getConfig() {
   const workspaceRoot = workspaceRoots[0]
   const gatewayUrl = (process.env.GATEWAY_URL || 'http://localhost:8787/api').replace(/\/$/, '')
   const allowSensitiveCommands = parseBoolean(process.env.RUNNER_ALLOW_SENSITIVE_COMMANDS, true)
-  const commandAllowlist = parseList(process.env.COMMAND_ALLOWLIST, DEVELOPMENT_COMMANDS)
-  const sensitiveCommandAllowlist = parseList(process.env.SENSITIVE_COMMAND_ALLOWLIST, SENSITIVE_COMMANDS)
+  const commandAllowlist = parseLowerList(process.env.COMMAND_ALLOWLIST, DEVELOPMENT_COMMANDS)
+  const sensitiveCommandAllowlist = parseLowerList(process.env.SENSITIVE_COMMAND_ALLOWLIST, SENSITIVE_COMMANDS)
   const effectiveCommandAllowlist = allowSensitiveCommands
     ? [...new Set([...commandAllowlist, ...sensitiveCommandAllowlist])]
     : commandAllowlist
+  const maxConcurrentJobs = parsePositiveInteger(process.env.RUNNER_MAX_CONCURRENT_JOBS, 1)
 
   return {
     gatewayUrl,
@@ -108,10 +124,20 @@ export function getConfig() {
     allowDelete: parseBoolean(process.env.RUNNER_ALLOW_DELETE, true),
     pollIntervalMs: Number(process.env.RUNNER_POLL_INTERVAL_MS || 2500),
     heartbeatIntervalMs: Number(process.env.RUNNER_HEARTBEAT_INTERVAL_MS || 10000),
-    maxConcurrentJobs: parsePositiveInteger(process.env.RUNNER_MAX_CONCURRENT_JOBS, 1),
+    maxConcurrentJobs,
+    maxHeavyJobs: Math.min(parsePositiveInteger(process.env.RUNNER_MAX_HEAVY_JOBS, 1), maxConcurrentJobs),
     maxOutputChars: Number(process.env.MAX_OUTPUT_CHARS || 24000),
     commandAllowlist: effectiveCommandAllowlist,
     sensitiveCommandAllowlist,
-    logDir: path.resolve(process.env.RUNNER_LOG_DIR || 'logs')
+    logDir: path.resolve(process.env.RUNNER_LOG_DIR || 'logs'),
+    defaultIgnores: parseList(process.env.RUNNER_DEFAULT_IGNORES, DEFAULT_IGNORES),
+    useSmartIgnores: parseBoolean(process.env.RUNNER_USE_SMART_IGNORES, true),
+    searchEngine: String(process.env.RUNNER_SEARCH_ENGINE || 'auto').trim().toLowerCase(),
+    searchTimeoutMs: parsePositiveInteger(process.env.RUNNER_SEARCH_TIMEOUT_MS, 30000),
+    searchMaxFiles: parsePositiveInteger(process.env.RUNNER_SEARCH_MAX_FILES, 20000),
+    fileListFastByDefault: parseBoolean(process.env.RUNNER_FILE_LIST_FAST_BY_DEFAULT, true),
+    logMaxFiles: parseNonNegativeInteger(process.env.RUNNER_LOG_MAX_FILES, 500),
+    logMaxAgeDays: parseNonNegativeInteger(process.env.RUNNER_LOG_MAX_AGE_DAYS, 14),
+    logMaxSizeMb: parseNonNegativeInteger(process.env.RUNNER_LOG_MAX_SIZE_MB, 25)
   }
 }

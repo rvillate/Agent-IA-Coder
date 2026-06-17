@@ -468,3 +468,92 @@ Recomendación:
 - Valores mayores deben usarse con cuidado porque pueden mezclar builds, deploys o cambios de archivos sobre el mismo workspace.
 
 El runner reporta al gateway `maxConcurrentJobs` y `activeJobs` para saber cuántos jobs puede ejecutar y cuáles están activos.
+
+## 18. Runner inteligente: búsquedas, cola y logs
+
+El runner intenta optimizarse solo sin perfiles por equipo. Las decisiones se toman por tipo de job, payload, límites configurados y capacidades locales.
+
+### Búsqueda inteligente
+
+`file.search` acepta `query`, `pattern` o `text` y usa `ripgrep (rg)` automáticamente cuando está instalado. Si `rg` no existe o falla en modo `auto`, cae al motor JS interno.
+
+Parámetros útiles por job:
+
+```json
+{
+  "path": ".",
+  "query": "ClienteEmpresarial",
+  "maxMatches": 100,
+  "maxDepth": 8,
+  "maxFiles": 20000,
+  "timeoutMs": 30000,
+  "extensions": ["ts", "html"],
+  "showIgnored": false,
+  "showHidden": false
+}
+```
+
+La respuesta incluye `engine`, `durationMs` y `stats` para diagnosticar búsquedas lentas.
+
+### Ignorados inteligentes
+
+Por defecto el runner omite carpetas pesadas como:
+
+```text
+node_modules,.git,dist,build,.next,.angular,target,coverage,.idea,.vscode,.cache,.turbo,logs
+```
+
+Se puede desactivar por job usando `showIgnored=true`, o globalmente con:
+
+```env
+RUNNER_USE_SMART_IGNORES=false
+```
+
+### Listados rápidos
+
+`file.list` usa modo rápido por defecto para evitar `stat` completo sobre cada carpeta. Si necesitas metadata completa, envía:
+
+```json
+{ "path": ".", "fast": false }
+```
+
+### Cola local por peso de job
+
+El runner clasifica automáticamente jobs como `light` o `heavy`.
+
+- `light`: lecturas, búsquedas acotadas, `git.status`, `git.diff`.
+- `heavy`: escrituras, borrados, builds, tests, deploys, Docker/Kubernetes y comandos potencialmente destructivos.
+
+Reglas:
+
+- Respeta `RUNNER_MAX_CONCURRENT_JOBS` como límite total.
+- Respeta `RUNNER_MAX_HEAVY_JOBS` para evitar demasiados builds/deploys simultáneos.
+- Evita dos jobs pesados al mismo tiempo sobre el mismo workspace.
+- Permite que jobs livianos corran mientras un job pesado está activo, si hay cupo.
+
+### Cancelación robusta
+
+En Windows, al cancelar o expirar un comando, el runner usa `taskkill /T /F` para matar el árbol de procesos. En Linux/macOS usa `SIGTERM` y luego `SIGKILL` si el proceso no termina.
+
+### Heartbeat con métricas
+
+El heartbeat reporta además:
+
+- `activeJobDetails`
+- `queuedJobDetails`
+- `maxHeavyJobs`
+- memoria libre/usada
+- load average cuando el sistema lo soporta
+- últimos jobs ejecutados
+
+### Rotación de logs
+
+Los logs locales se limpian automáticamente según:
+
+```env
+RUNNER_LOG_MAX_FILES=500
+RUNNER_LOG_MAX_AGE_DAYS=14
+RUNNER_LOG_MAX_SIZE_MB=25
+```
+
+Usa `0` para desactivar cualquiera de esos límites.

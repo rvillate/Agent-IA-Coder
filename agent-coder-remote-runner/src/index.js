@@ -12,7 +12,11 @@ import {
   fileSearch,
   runCommand,
   gitStatus,
-  gitDiff
+  gitDiff,
+  classifyJob,
+  jobWorkspaceKey,
+  rotateLogs,
+  runnerMetrics
 } from './tools.js'
 
 const config = getConfig()
@@ -32,16 +36,92 @@ const capabilities = [
 ]
 
 const activeJobs = new Map()
+const pendingJobs = []
+const jobHistory = []
+
+function rememberJob(job, status, startedAt, finishedAt = Date.now()) {
+  jobHistory.unshift({ id: job.id, type: job.type, weight: job.weight, workspaceKey: job.workspaceKey, status, durationMs: finishedAt - startedAt, finishedAt })
+  if (jobHistory.length > 20) jobHistory.pop()
+}
+
+function describeJob(job) {
+  return {
+    id: job.id,
+    type: job.type,
+    weight: job.weight || classifyJob(job),
+    workspaceKey: job.workspaceKey || jobWorkspaceKey(job, guard),
+    startedAt: job.startedAt || null,
+    queuedAt: job.queuedAt || null,
+    ageMs: job.startedAt ? Date.now() - job.startedAt : null
+  }
+}
+
+function activeJobDetails() {
+  return Array.from(activeJobs.values()).map(({ job }) => describeJob(job))
+}
 
 function activeJobIds() {
   return Array.from(activeJobs.keys())
 }
 
-function trackJob(job) {
+function queuedJobDetails() {
+  return pendingJobs.map(describeJob)
+}
+
+function countActiveHeavy() {
+  return activeJobDetails().filter((job) => job.weight === 'heavy').length
+}
+
+function hasActiveHeavyInWorkspace(workspaceKey) {
+  return activeJobDetails().some((job) => job.weight === 'heavy' && job.workspaceKey === workspaceKey)
+}
+
+function canStartJob(job) {
+  if (activeJobs.size >= config.maxConcurrentJobs) return false
+  if (job.weight !== 'heavy') return true
+  if (countActiveHeavy() >= config.maxHeavyJobs) return false
+  if (hasActiveHeavyInWorkspace(job.workspaceKey)) return false
+  return true
+}
+
+function prepareClaimedJob(job) {
+  job.weight = classifyJob(job)
+  job.workspaceKey = jobWorkspaceKey(job, guard)
+  job.queuedAt = Date.now()
+  return job
+}
+
+function enqueueJob(job) {
+  const prepared = prepareClaimedJob(job)
+  pendingJobs.push(prepared)
+  update(prepared, {
+    status: 'running',
+    summary: `Job reclamado por ${config.runnerId}. En cola local inteligente (${prepared.weight}) esperando cupo seguro.`
+  }).catch(() => {})
+  return prepared
+}
+
+function startJob(job) {
+  job.startedAt = Date.now()
   const promise = executeJob(job)
     .catch((error) => jobError(job, 'error no controlado', error.message))
-    .finally(() => activeJobs.delete(job.id))
-  activeJobs.set(job.id, promise)
+    .finally(() => {
+      activeJobs.delete(job.id)
+      startPendingJobs().catch((error) => console.error(`[scheduler] ${error.message}`))
+    })
+  activeJobs.set(job.id, { job, promise })
+}
+
+async function startPendingJobs() {
+  let startedAny = false
+  for (let index = 0; index < pendingJobs.length;) {
+    const job = pendingJobs[index]
+    if (!canStartJob(job)) { index += 1; continue }
+    pendingJobs.splice(index, 1)
+    startJob(job)
+    startedAny = true
+  }
+  return startedAny
 }
 
 function sleep(ms) {
@@ -70,7 +150,7 @@ function jobError(job, message, error) {
   console.error(`[${timestamp()}] [JOB] ${job.id} ${message}${detail}`)
 }
 
-function runnerPayload(status = 'online') {
+async function runnerPayload(status = 'online') {
   return {
     runnerId: config.runnerId,
     status,
@@ -78,10 +158,15 @@ function runnerPayload(status = 'online') {
     workspaceRoots: config.workspaceRoots,
     platform: `${process.platform}-${process.arch}`,
     hostname: os.hostname(),
-    version: '1.0.0',
+    version: '1.1.0',
     maxConcurrentJobs: config.maxConcurrentJobs,
+    maxHeavyJobs: config.maxHeavyJobs,
     activeJobs: activeJobIds(),
-    capabilities
+    activeJobDetails: activeJobDetails(),
+    queuedJobDetails: queuedJobDetails(),
+    capabilities,
+    metrics: await runnerMetrics(config, activeJobDetails(), queuedJobDetails()),
+    lastJobs: jobHistory
   }
 }
 
@@ -122,7 +207,8 @@ function cancelChecker(job) {
 async function executeJob(job) {
   const payload = job.payload || {}
   console.log('')
-  jobLog(job, job.type)
+  jobLog(job, `${job.type} (${job.weight || 'light'})`)
+  const startedAt = Date.now()
 
   try {
     if (job.type === 'shell.exec' && config.requireLocalApproval) {
@@ -133,6 +219,7 @@ async function executeJob(job) {
       const approved = await askApproval(`Job ${job.id}\nRunner: ${config.runnerId}\nCWD: ${payload.cwd || '.'}\nComando: ${payload.command} ${(payload.args || []).join(' ')}`)
       if (!approved) {
         await update(job, { status: 'rejected', summary: 'Rechazado por el usuario en la terminal del runner.' })
+        rememberJob(job, 'rejected', startedAt)
         jobLog(job, 'rechazado')
         return
       }
@@ -144,7 +231,7 @@ async function executeJob(job) {
     switch (job.type) {
       case 'file.list':
         result = await fileList(payload, guard, config)
-        await update(job, { status: 'success', result, summary: 'Listado generado correctamente', truncated: result.truncated })
+        await update(job, { status: 'success', result, summary: `Listado generado correctamente en ${result.durationMs ?? 0}ms`, truncated: result.truncated })
         break
       case 'file.read':
         result = await fileRead(payload, guard, config)
@@ -164,7 +251,7 @@ async function executeJob(job) {
         break
       case 'file.search':
         result = await fileSearch(payload, guard, config)
-        await update(job, { status: 'success', result, summary: `Búsqueda finalizada con ${result.total} coincidencias`, truncated: result.truncated })
+        await update(job, { status: 'success', result, summary: `Búsqueda ${result.engine || 'js'} finalizada con ${result.total} coincidencias en ${result.durationMs ?? 0}ms`, truncated: result.truncated })
         break
       case 'shell.exec': {
         result = await runCommand(payload, guard, config, job.id, isCancelRequested)
@@ -177,7 +264,7 @@ async function executeJob(job) {
           error: result.error,
           localLogPath: result.localLogPath,
           truncated: result.truncated,
-          result: { durationMs: result.durationMs }
+          result: { durationMs: result.durationMs, weight: job.weight, workspaceKey: job.workspaceKey }
         })
         break
       }
@@ -212,8 +299,10 @@ async function executeJob(job) {
       default:
         throw new Error(`Tipo de job no soportado: ${job.type}`)
     }
+    rememberJob(job, 'success', startedAt)
     jobLog(job, 'terminado')
   } catch (error) {
+    rememberJob(job, 'error', startedAt)
     jobError(job, 'error', error.message)
     await update(job, {
       status: 'error',
@@ -224,12 +313,20 @@ async function executeJob(job) {
   }
 }
 
+function claimBudget() {
+  const localCount = activeJobs.size + pendingJobs.length
+  return Math.max(config.maxConcurrentJobs - localCount, 0)
+}
+
 async function main() {
   if (!config.runnerSharedKey || config.runnerSharedKey === 'change-me-runner-key') {
     console.error('RUNNER_SHARED_KEY no está configurada. Edita .env antes de iniciar.')
     process.exit(1)
   }
   await ensureWorkspace(config.workspaceRoots)
+  await rotateLogs(config).catch((error) => console.error(`[logs] ${error.message}`))
+  setInterval(() => rotateLogs(config).catch((error) => console.error(`[logs] ${error.message}`)), 60 * 60 * 1000)
+
   console.log('Agent Coder Remote Runner')
   console.log(`Runner ID: ${config.runnerId}`)
   console.log(`Gateway: ${config.gatewayUrl}`)
@@ -238,31 +335,34 @@ async function main() {
   console.log(`Aprobación local: ${config.requireLocalApproval}`)
   console.log(`Comandos peligrosos: ${config.allowDangerousCommands}`)
   console.log(`Concurrencia máxima: ${config.maxConcurrentJobs}`)
+  console.log(`Jobs pesados máximos: ${config.maxHeavyJobs}`)
+  console.log(`Motor búsqueda: ${config.searchEngine}`)
+  console.log(`Ignores inteligentes: ${config.useSmartIgnores ? config.defaultIgnores.join(', ') : 'desactivados'}`)
 
-  await client.register(runnerPayload('online'))
+  await client.register(await runnerPayload('online'))
   console.log('Registrado en gateway central.')
 
   setInterval(() => {
-    client.heartbeat(runnerPayload('online')).catch((error) => console.error(`[heartbeat] ${error.message}`))
+    runnerPayload('online')
+      .then((payload) => client.heartbeat(payload))
+      .catch((error) => console.error(`[heartbeat] ${error.message}`))
   }, config.heartbeatIntervalMs)
 
   while (true) {
     try {
-      if (activeJobs.size >= config.maxConcurrentJobs) {
-        await sleep(config.pollIntervalMs)
-        continue
-      }
-
-      const availableSlots = Math.max(config.maxConcurrentJobs - activeJobs.size, 0)
+      await startPendingJobs()
+      const availableSlots = claimBudget()
       let claimedAny = false
       for (let slot = 0; slot < availableSlots; slot++) {
         const response = await client.claimNext(config.runnerId)
         if (!response.job) break
         claimedAny = true
-        trackJob(response.job)
+        const job = enqueueJob(response.job)
+        jobLog(job, `reclamado como ${job.weight}`)
       }
-
-      if (!claimedAny) await sleep(config.pollIntervalMs)
+      await startPendingJobs()
+      if (!claimedAny && pendingJobs.length === 0) await sleep(config.pollIntervalMs)
+      else await sleep(Math.min(config.pollIntervalMs, 500))
     } catch (error) {
       console.error(`[poll] ${error.message}`)
       await sleep(Math.max(config.pollIntervalMs, 5000))
@@ -272,7 +372,7 @@ async function main() {
 
 process.on('SIGINT', async () => {
   console.log('\nDeteniendo runner...')
-  try { await client.heartbeat(runnerPayload('offline')) } catch {}
+  try { await client.heartbeat(await runnerPayload('offline')) } catch {}
   process.exit(0)
 })
 
