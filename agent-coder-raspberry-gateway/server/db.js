@@ -3,6 +3,22 @@ import path from 'node:path'
 
 const now = () => Date.now()
 
+function publicWorkspaceRoots(runner) {
+  const roots = []
+  if (Array.isArray(runner.workspaceRoots)) roots.push(...runner.workspaceRoots)
+  if (runner.workspaceRoot) roots.unshift(runner.workspaceRoot)
+  const seen = new Set()
+  return roots
+    .map((item) => String(item || '').trim())
+    .filter(Boolean)
+    .filter((item) => {
+      const key = item.toLowerCase()
+      if (seen.has(key)) return false
+      seen.add(key)
+      return true
+    })
+}
+
 function createInitialData() {
   return {
     meta: {
@@ -129,6 +145,7 @@ export function runnerPublic(runner) {
     lastSeen: runner.lastSeen ?? null,
     lastSeenAgeMs: Number.isFinite(ageMs) ? ageMs : null,
     workspaceRoot: runner.workspaceRoot ?? null,
+    workspaceRoots: publicWorkspaceRoots(runner),
     platform: runner.platform ?? null,
     hostname: runner.hostname ?? null,
     version: runner.version ?? null,

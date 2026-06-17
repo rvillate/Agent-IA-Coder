@@ -36,6 +36,23 @@ const VALID_JOB_TYPES = new Set([
 const now = () => Date.now()
 const newId = (prefix = 'job') => `${prefix}_${Date.now()}_${crypto.randomBytes(5).toString('hex')}`
 
+function normalizeWorkspaceRoots(workspaceRoot, workspaceRoots) {
+  const roots = []
+  if (Array.isArray(workspaceRoots)) roots.push(...workspaceRoots)
+  else if (typeof workspaceRoots === 'string' && workspaceRoots.trim()) roots.push(...workspaceRoots.split(/[|,;]/))
+  if (workspaceRoot) roots.unshift(workspaceRoot)
+  const seen = new Set()
+  return roots
+    .map((item) => String(item || '').trim())
+    .filter(Boolean)
+    .filter((item) => {
+      const key = item.toLowerCase()
+      if (seen.has(key)) return false
+      seen.add(key)
+      return true
+    })
+}
+
 function limitString(value, max = MAX_TAIL_CHARS) {
   const text = value == null ? '' : String(value)
   if (text.length <= max) return text
@@ -270,6 +287,7 @@ app.post('/api/runner/register', requireRunnerKey, async (req, res) => {
     status: 'online',
     lastSeen: now(),
     workspaceRoot: req.body.workspaceRoot || null,
+    workspaceRoots: normalizeWorkspaceRoots(req.body.workspaceRoot, req.body.workspaceRoots),
     platform: req.body.platform || null,
     hostname: req.body.hostname || null,
     version: req.body.version || null,
@@ -292,6 +310,10 @@ app.post('/api/runner/heartbeat', requireRunnerKey, async (req, res) => {
       status: req.body.status || 'online',
       lastSeen: now(),
       workspaceRoot: req.body.workspaceRoot ?? current.workspaceRoot ?? null,
+      workspaceRoots: normalizeWorkspaceRoots(
+        req.body.workspaceRoot ?? current.workspaceRoot ?? null,
+        req.body.workspaceRoots ?? current.workspaceRoots ?? []
+      ),
       platform: req.body.platform ?? current.platform ?? null,
       hostname: req.body.hostname ?? current.hostname ?? null,
       version: req.body.version ?? current.version ?? null,
