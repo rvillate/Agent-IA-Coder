@@ -36,6 +36,13 @@ const VALID_JOB_TYPES = new Set([
 const now = () => Date.now()
 const newId = (prefix = 'job') => `${prefix}_${Date.now()}_${crypto.randomBytes(5).toString('hex')}`
 
+function normalizeActiveJobs(activeJobs) {
+  if (!Array.isArray(activeJobs)) return []
+  return activeJobs
+    .map((item) => String(item || '').trim())
+    .filter(Boolean)
+}
+
 function normalizeWorkspaceRoots(workspaceRoot, workspaceRoots) {
   const roots = []
   if (Array.isArray(workspaceRoots)) roots.push(...workspaceRoots)
@@ -291,6 +298,8 @@ app.post('/api/runner/register', requireRunnerKey, async (req, res) => {
     platform: req.body.platform || null,
     hostname: req.body.hostname || null,
     version: req.body.version || null,
+    maxConcurrentJobs: Number(req.body.maxConcurrentJobs || 1),
+    activeJobs: normalizeActiveJobs(req.body.activeJobs),
     capabilities: Array.isArray(req.body.capabilities) ? req.body.capabilities : []
   }
   await db.withWrite((data) => {
@@ -317,6 +326,8 @@ app.post('/api/runner/heartbeat', requireRunnerKey, async (req, res) => {
       platform: req.body.platform ?? current.platform ?? null,
       hostname: req.body.hostname ?? current.hostname ?? null,
       version: req.body.version ?? current.version ?? null,
+      maxConcurrentJobs: Number(req.body.maxConcurrentJobs ?? current.maxConcurrentJobs ?? 1),
+      activeJobs: normalizeActiveJobs(req.body.activeJobs ?? current.activeJobs ?? []),
       capabilities: Array.isArray(req.body.capabilities) ? req.body.capabilities : current.capabilities || []
     }
     data.runners[runnerId] = runner

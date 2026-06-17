@@ -149,6 +149,8 @@ export function runnerPublic(runner) {
     platform: runner.platform ?? null,
     hostname: runner.hostname ?? null,
     version: runner.version ?? null,
+    maxConcurrentJobs: runner.maxConcurrentJobs ?? 1,
+    activeJobs: Array.isArray(runner.activeJobs) ? runner.activeJobs : [],
     capabilities: runner.capabilities ?? []
   }
 }

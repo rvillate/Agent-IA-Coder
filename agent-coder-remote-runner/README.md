@@ -445,3 +445,26 @@ Ejemplo de uso desde un job:
   }
 }
 ```
+
+
+## 17. Jobs en paralelo
+
+Por defecto el runner ejecuta un job a la vez:
+
+```env
+RUNNER_MAX_CONCURRENT_JOBS=1
+```
+
+Para permitir tareas de diagnóstico mientras un build o deploy largo sigue corriendo, se puede subir a `2`:
+
+```env
+RUNNER_MAX_CONCURRENT_JOBS=2
+```
+
+Recomendación:
+
+- `1`: modo seguro/secuencial, ideal por defecto.
+- `2`: permite revisar logs, procesos o estado mientras hay un job largo.
+- Valores mayores deben usarse con cuidado porque pueden mezclar builds, deploys o cambios de archivos sobre el mismo workspace.
+
+El runner reporta al gateway `maxConcurrentJobs` y `activeJobs` para saber cuántos jobs puede ejecutar y cuáles están activos.

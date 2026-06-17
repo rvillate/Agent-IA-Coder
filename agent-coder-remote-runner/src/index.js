@@ -31,6 +31,19 @@ const capabilities = [
   'git.diff'
 ]
 
+const activeJobs = new Map()
+
+function activeJobIds() {
+  return Array.from(activeJobs.keys())
+}
+
+function trackJob(job) {
+  const promise = executeJob(job)
+    .catch((error) => jobError(job, 'error no controlado', error.message))
+    .finally(() => activeJobs.delete(job.id))
+  activeJobs.set(job.id, promise)
+}
+
 function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms))
 }
@@ -66,6 +79,8 @@ function runnerPayload(status = 'online') {
     platform: `${process.platform}-${process.arch}`,
     hostname: os.hostname(),
     version: '1.0.0',
+    maxConcurrentJobs: config.maxConcurrentJobs,
+    activeJobs: activeJobIds(),
     capabilities
   }
 }
@@ -222,6 +237,7 @@ async function main() {
   console.log(`Workspaces permitidos: ${config.workspaceRoots.join(', ')}`)
   console.log(`Aprobación local: ${config.requireLocalApproval}`)
   console.log(`Comandos peligrosos: ${config.allowDangerousCommands}`)
+  console.log(`Concurrencia máxima: ${config.maxConcurrentJobs}`)
 
   await client.register(runnerPayload('online'))
   console.log('Registrado en gateway central.')
@@ -232,9 +248,21 @@ async function main() {
 
   while (true) {
     try {
-      const response = await client.claimNext(config.runnerId)
-      if (response.job) await executeJob(response.job)
-      else await sleep(config.pollIntervalMs)
+      if (activeJobs.size >= config.maxConcurrentJobs) {
+        await sleep(config.pollIntervalMs)
+        continue
+      }
+
+      const availableSlots = Math.max(config.maxConcurrentJobs - activeJobs.size, 0)
+      let claimedAny = false
+      for (let slot = 0; slot < availableSlots; slot++) {
+        const response = await client.claimNext(config.runnerId)
+        if (!response.job) break
+        claimedAny = true
+        trackJob(response.job)
+      }
+
+      if (!claimedAny) await sleep(config.pollIntervalMs)
     } catch (error) {
       console.error(`[poll] ${error.message}`)
       await sleep(Math.max(config.pollIntervalMs, 5000))

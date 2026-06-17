@@ -28,6 +28,12 @@ function parseBoolean(value, fallback = false) {
   return ['true', '1', 'yes', 'y', 'on', 'si', 'sí'].includes(String(value).trim().toLowerCase())
 }
 
+function parsePositiveInteger(value, fallback = 1) {
+  if (value == null || value === '') return fallback
+  const parsed = Number.parseInt(String(value).trim(), 10)
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback
+}
+
 function parseList(value, fallback = []) {
   const raw = value == null || value === '' ? fallback.join(',') : String(value)
   return raw
@@ -102,6 +108,7 @@ export function getConfig() {
     allowDelete: parseBoolean(process.env.RUNNER_ALLOW_DELETE, true),
     pollIntervalMs: Number(process.env.RUNNER_POLL_INTERVAL_MS || 2500),
     heartbeatIntervalMs: Number(process.env.RUNNER_HEARTBEAT_INTERVAL_MS || 10000),
+    maxConcurrentJobs: parsePositiveInteger(process.env.RUNNER_MAX_CONCURRENT_JOBS, 1),
     maxOutputChars: Number(process.env.MAX_OUTPUT_CHARS || 24000),
     commandAllowlist: effectiveCommandAllowlist,
     sensitiveCommandAllowlist,

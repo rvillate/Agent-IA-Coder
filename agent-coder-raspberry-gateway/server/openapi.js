@@ -87,6 +87,21 @@ export function buildOpenApi(baseUrl) {
           additionalProperties: false
         },
         PatchJobRequest: patchJobRequestSchema,
+        Runner: {
+          type: 'object',
+          properties: {
+            id: { type: 'string' },
+            status: { type: 'string' },
+            workspaceRoot: { type: ['string', 'null'] },
+            workspaceRoots: { type: 'array', items: { type: 'string' } },
+            maxConcurrentJobs: { type: 'integer' },
+            activeJobs: { type: 'array', items: { type: 'string' } },
+            platform: { type: ['string', 'null'] },
+            hostname: { type: ['string', 'null'] },
+            capabilities: { type: 'array', items: { type: 'string' } }
+          },
+          additionalProperties: true
+        },
         Job: {
           type: 'object',
           properties: {
