@@ -219,7 +219,7 @@ async function runRgSearch(payload, guard, config, query, root, options) {
     child.on('error', reject)
     child.on('close', (code) => {
       clearTimeout(timeout)
-      if (timedOut) return resolve({ query, matches: [], total: 0, truncated: true, engine: 'rg', durationMs: nowMs() - started, stats: { timedOut: true, stderr } })
+      if (timedOut) return resolve({ query, matches: [], total: 0, truncated: true, engine: 'rg', durationMs: nowMs() - started, stats: { timedOut: true, stderr }, limits: { maxMatches: options.maxMatches, maxFileBytes: options.maxFileBytes, maxDepth: options.maxDepth, maxFiles: options.maxFiles, timeoutMs: options.timeoutMs, hard: options.hardLimits } })
       if (code > 1) return reject(new Error(stderr || `rg terminó con código ${code}`))
       const lines = stdout.split(/\r?\n/).filter(Boolean)
       const matches = []
@@ -230,7 +230,7 @@ async function runRgSearch(payload, guard, config, query, root, options) {
         const fullPath = path.resolve(match[1])
         matches.push({ path: relativePath(guard, fullPath), line: Number(match[2]), column: Number(match[3]), preview: match[4] })
       }
-      resolve({ query, matches, total: matches.length, truncated: lines.length >= options.maxMatches, engine: 'rg', durationMs: nowMs() - started, stats: { filesVisited: null, dirsVisited: null, skipped: null, timedOut: false } })
+      resolve({ query, matches, total: matches.length, truncated: lines.length >= options.maxMatches, engine: 'rg', durationMs: nowMs() - started, stats: { filesVisited: null, dirsVisited: null, skipped: null, timedOut: false }, limits: { maxMatches: options.maxMatches, maxFileBytes: options.maxFileBytes, maxDepth: options.maxDepth, maxFiles: options.maxFiles, timeoutMs: options.timeoutMs, hard: options.hardLimits } })
     })
   })
 }
@@ -239,15 +239,18 @@ export async function fileSearch(payload, guard, config = {}) {
   const started = nowMs()
   const root = guard.resolveSafe(payload.path || '.')
   const query = fileSearchQuery(payload)
-  const maxMatches = Math.min(Number(payload.maxMatches ?? 100), 1000)
-  const maxFileBytes = Math.min(Number(payload.maxFileBytes ?? 512000), 5 * 1024 * 1024)
-  const maxDepth = Math.min(Number(payload.maxDepth ?? 12), 30)
-  const maxFiles = Math.min(Number(payload.maxFiles ?? config.searchMaxFiles ?? 20000), 200000)
-  const timeoutMs = Math.min(Number(payload.timeoutMs ?? config.searchTimeoutMs ?? 30000), 5 * 60 * 1000)
+  const maxMatches = Number(payload.maxMatches ?? 100)
+  const maxFileBytes = Number(payload.maxFileBytes ?? 512000)
+  const requestedMaxDepth = Number(payload.maxDepth ?? config.searchMaxDepth ?? 12)
+  const requestedMaxFiles = Number(payload.maxFiles ?? config.searchMaxFiles ?? 20000)
+  const requestedTimeoutMs = Number(payload.timeoutMs ?? config.searchTimeoutMs ?? 30000)
+  const maxDepth = config.searchHardMaxDepth > 0 ? Math.min(requestedMaxDepth, config.searchHardMaxDepth) : requestedMaxDepth
+  const maxFiles = config.searchHardMaxFiles > 0 ? Math.min(requestedMaxFiles, config.searchHardMaxFiles) : requestedMaxFiles
+  const timeoutMs = config.searchHardTimeoutMs > 0 ? Math.min(requestedTimeoutMs, config.searchHardTimeoutMs) : requestedTimeoutMs
   const caseSensitive = Boolean(payload.caseSensitive)
   const needle = caseSensitive ? query : query.toLowerCase()
   const ignore = buildIgnoreSet(payload, config, Boolean(payload.showHidden))
-  const options = { maxMatches, maxFileBytes, maxDepth, maxFiles, timeoutMs, caseSensitive, ignore, showIgnored: Boolean(payload.showIgnored) }
+  const options = { maxMatches, maxFileBytes, maxDepth, maxFiles, timeoutMs, caseSensitive, ignore, showIgnored: Boolean(payload.showIgnored), hardLimits: { timeoutMs: config.searchHardTimeoutMs || 0, maxFiles: config.searchHardMaxFiles || 0, maxDepth: config.searchHardMaxDepth || 0 } }
 
   const wantsRg = !payload.forceJs && ['auto', 'rg', 'ripgrep'].includes(config.searchEngine || 'auto')
   if (wantsRg && isRgAvailable()) {
@@ -287,7 +290,7 @@ export async function fileSearch(payload, guard, config = {}) {
     }
   }
   await scan(root)
-  return { query, matches, total: matches.length, truncated: matches.length >= maxMatches || stats.filesVisited >= maxFiles || stats.timedOut, engine: 'js', durationMs: nowMs() - started, stats }
+  return { query, matches, total: matches.length, truncated: matches.length >= maxMatches || stats.filesVisited >= maxFiles || stats.timedOut, engine: 'js', durationMs: nowMs() - started, stats, limits: { maxMatches, maxFileBytes, maxDepth, maxFiles, timeoutMs, hard: options.hardLimits } }
 }
 
 function commandBase(command) {

@@ -509,6 +509,35 @@ Se puede desactivar por job usando `showIgnored=true`, o globalmente con:
 RUNNER_USE_SMART_IGNORES=false
 ```
 
+
+### Autonomía del agente y límites duros opcionales
+
+Los valores `RUNNER_SEARCH_TIMEOUT_MS`, `RUNNER_SEARCH_MAX_FILES` y `RUNNER_SEARCH_MAX_DEPTH` son defaults para búsquedas normales. El payload del job puede pedir más alcance cuando la tarea lo requiera.
+
+Los límites duros solo se aplican si se configuran con un valor mayor a `0`:
+
+```env
+RUNNER_SEARCH_HARD_TIMEOUT_MS=0
+RUNNER_SEARCH_HARD_MAX_FILES=0
+RUNNER_SEARCH_HARD_MAX_DEPTH=0
+```
+
+Con `0`, el runner no impone techo duro y el agente puede expandir con `timeoutMs`, `maxFiles`, `maxDepth`, `showIgnored` y `showHidden`.
+
+Ejemplo de búsqueda amplia explícita:
+
+```json
+{
+  "path": ".",
+  "query": "texto",
+  "maxFiles": 500000,
+  "timeoutMs": 600000,
+  "maxDepth": 80,
+  "showIgnored": true,
+  "showHidden": true
+}
+```
+
 ### Listados rápidos
 
 `file.list` usa modo rápido por defecto para evitar `stat` completo sobre cada carpeta. Si necesitas metadata completa, envía:
