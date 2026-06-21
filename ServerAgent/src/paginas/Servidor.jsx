@@ -1,10 +1,12 @@
 import React, { useEffect, useMemo, useState } from 'react'
 import { Activity, AlertTriangle, Calendar, CheckCircle2, ChevronDown, Clock3, Cpu, Database, Download, Gauge, HardDrive, Info, MemoryStick, Network, RefreshCw, Server, ShieldCheck, Terminal, Trash2, Users } from 'lucide-react'
-import { Area, AreaChart, Bar, CartesianGrid, ComposedChart, Line, Pie, PieChart, ResponsiveContainer, Tooltip, XAxis, YAxis, Cell } from 'recharts'
+import { Area, AreaChart, Bar, CartesianGrid, ComposedChart, Line, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
 import { api } from '../servicios/api.js'
 
 const RANGE_MINUTES = { '1H': 60, '3H': 180, '6H': 360, '12H': 720, '24H': 1440 }
 const COLORS = ['#2563eb', '#7c3aed', '#f6bd38', '#a855f7']
+const SPARK_POINTS = 10
+const ACTIVITY_POINTS = 12
 
 function pct(value) {
   const n = Number(value)
@@ -154,7 +156,8 @@ export function Servidor() {
     { name: 'Disco', value: pct(disk.usedPercent) },
     { name: 'Red', value: 100 }
   ]
-  const h = (key) => history.map((item) => ({ label: item.label, value: item[key] }))
+  const h = (key) => history.slice(-SPARK_POINTS).map((item) => ({ label: item.label, value: item[key] }))
+  const activityData = (data?.jobsActivity || []).slice(-ACTIVITY_POINTS)
 
   return <div className="srv-dashboard">
     <div className="srv-header">
@@ -189,7 +192,7 @@ export function Servidor() {
         <div className="srv-metric-title"><span><Gauge size={18}/></span><b>Uptime</b></div>
         <strong>{uptimeShort(data?.uptime?.seconds)}</strong>
         <p>Desde el {formatDateTime(data?.uptime?.since)}</p>
-        <div className="srv-ring"><span>99.61%</span><small>Disponibilidad</small></div>
+        <div className="srv-flat-meter"><div><span>Disponibilidad</span><b>99.61%</b></div><UsageBar value={99.61}/></div>
       </section>
       <MetricCard icon={<Users/>} title="Procesos activos" value={processes.total || 0} subtitle={`+${Math.max(1, Math.round(lastHourJobs / 6))} desde la última hora`} badge="Normal" history={h('processes')} color="#2563eb" bars />
     </div>
@@ -197,18 +200,18 @@ export function Servidor() {
     <div className="srv-main-grid">
       <section className="srv-card srv-activity">
         <div className="srv-section-head">
-          <div><h2>Actividad del servidor</h2><p>Jobs agrupados cada 60 segundos. La barra muestra cantidad de jobs y la línea superpuesta suma los bytes transferidos por minuto.</p></div>
+          <div><h2>Actividad del servidor</h2><p>Últimas 12 mediciones de 60 segundos: jobs por minuto y bytes transferidos.</p></div>
           <div className="srv-tabs">{['1H','3H','6H','12H','24H'].map((item) => <button key={item} className={range === item ? 'active' : ''} onClick={() => setRange(item)}>{item}</button>)}<button><Calendar size={14}/></button></div>
         </div>
         <div className="srv-legend"><span><i className="blue"/>Jobs por minuto</span><span><i className="purple"/>Bytes transferidos por minuto</span></div>
         <ResponsiveContainer width="100%" height={210}>
-          <ComposedChart data={data?.jobsActivity || []} margin={{ top: 10, right: 8, bottom: 0, left: -10 }}>
+          <ComposedChart data={activityData} margin={{ top: 10, right: 8, bottom: 0, left: -10 }}>
             <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e6edf7" />
-            <XAxis dataKey="label" tick={{ fontSize: 11 }} minTickGap={18} />
-            <YAxis yAxisId="jobs" tick={{ fontSize: 11 }} allowDecimals={false} label={{ value: 'Jobs', angle: -90, position: 'insideLeft', style: { fontSize: 11 } }} />
-            <YAxis yAxisId="bytes" orientation="right" tick={{ fontSize: 11 }} tickFormatter={bytes} width={58} />
+            <XAxis dataKey="label" tick={{ fontSize: 11 }} interval={3} minTickGap={32} />
+            <YAxis yAxisId="jobs" hide allowDecimals={false} />
+            <YAxis yAxisId="bytes" hide orientation="right" tickFormatter={bytes} />
             <Tooltip content={<JobsTooltip />} />
-            <Bar yAxisId="jobs" dataKey="jobs" fill="#2563eb" radius={[5, 5, 0, 0]} barSize={9} />
+            <Bar yAxisId="jobs" dataKey="jobs" fill="#2563eb" radius={[5, 5, 0, 0]} barSize={14} />
             <Line yAxisId="bytes" type="monotone" dataKey="bytes" stroke="#7c3aed" strokeWidth={2.4} dot={false} />
           </ComposedChart>
         </ResponsiveContainer>
@@ -229,7 +232,7 @@ export function Servidor() {
     <div className="srv-bottom-grid">
       <section className="srv-card srv-distribution">
         <h2>Distribución del uso de recursos</h2>
-        <div className="srv-dist-content"><ResponsiveContainer width={100} height={100}><PieChart><Pie data={resourceData} innerRadius={32} outerRadius={48} dataKey="value" paddingAngle={2}>{resourceData.map((entry, index) => <Cell key={entry.name} fill={COLORS[index]} />)}</Pie></PieChart></ResponsiveContainer><div className="srv-dist-bars">{resourceData.map((item, i) => <div key={item.name}><span><i style={{ background: COLORS[i] }}/>{item.name}</span><b>{item.value}%</b><UsageBar value={item.value} color={i === 1 || i === 3 ? 'purple' : i === 2 ? 'yellow' : 'blue'} /></div>)}</div></div>
+        <div className="srv-dist-content flat"><div className="srv-dist-bars">{resourceData.map((item, i) => <div key={item.name}><span><i style={{ background: COLORS[i] }}/>{item.name}</span><b>{item.value}%</b><UsageBar value={item.value} color={i === 1 || i === 3 ? 'purple' : i === 2 ? 'yellow' : 'blue'} /></div>)}</div></div>
       </section>
 
       <section className="srv-card srv-services">
