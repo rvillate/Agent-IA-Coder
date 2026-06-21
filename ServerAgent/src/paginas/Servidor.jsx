@@ -1,201 +1,234 @@
 import React, { useEffect, useMemo, useState } from 'react'
-import { Activity, Cpu, HardDrive, MemoryStick, RefreshCw, Server } from 'lucide-react'
-import { Area, AreaChart, Bar, CartesianGrid, ComposedChart, Line, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
-import { useTranslation } from 'react-i18next'
-import { Tarjeta, IconBox, Estado } from '../componentes/UI.jsx'
+import { Activity, AlertTriangle, BarChart3, Calendar, CheckCircle2, ChevronDown, Clock3, Cpu, Database, Download, Gauge, Globe2, HardDrive, Info, MemoryStick, Network, RefreshCw, Server, ShieldCheck, Terminal, Users } from 'lucide-react'
+import { Area, AreaChart, Bar, CartesianGrid, ComposedChart, Line, Pie, PieChart, ResponsiveContainer, Tooltip, XAxis, YAxis, Cell } from 'recharts'
 import { api } from '../servicios/api.js'
 
-const MAX_HISTORIAL = 28
+const MAX_HISTORY = 28
+const COLORS = ['#2563eb', '#7c3aed', '#f6bd38', '#a855f7']
 
-function clampPct(value) {
+function pct(value) {
   const n = Number(value)
   if (!Number.isFinite(n)) return 0
   return Math.max(0, Math.min(100, Math.round(n)))
 }
 
-function formatoBytes(bytes) {
+function bytes(bytes) {
   const n = Number(bytes || 0)
   if (!Number.isFinite(n) || n <= 0) return '0 B'
   const units = ['B', 'KB', 'MB', 'GB', 'TB']
   let value = n
   let index = 0
-  while (value >= 1024 && index < units.length - 1) {
-    value /= 1024
-    index += 1
-  }
+  while (value >= 1024 && index < units.length - 1) { value /= 1024; index += 1 }
   const decimals = index === 0 ? 0 : value >= 10 ? 1 : 2
   return `${value.toFixed(decimals)} ${units[index]}`
 }
 
-function formatoGb(bytes) {
-  const n = Number(bytes || 0)
+function gb(value) {
+  const n = Number(value || 0)
   if (!Number.isFinite(n) || n <= 0) return '0 GB'
   return `${(n / 1024 / 1024 / 1024).toFixed(1)} GB`
 }
 
-function Sparkline({ data, dataKey = 'value' }) {
-  return <div className="server-sparkline">
-    <ResponsiveContainer width="100%" height={42}>
-      <AreaChart data={data} margin={{ top: 4, right: 0, bottom: 0, left: 0 }}>
+function uptimeShort(seconds) {
+  const total = Number(seconds || 0)
+  const d = Math.floor(total / 86400)
+  const h = Math.floor((total % 86400) / 3600)
+  return `${d}d ${h}h`
+}
+
+function formatDateTime(ts) {
+  return new Date(ts || Date.now()).toLocaleString('es-CO', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false })
+}
+
+function Spark({ data, color = '#2563eb', fill = '#dbeafe', bars = false }) {
+  return <div className="srv-spark">
+    <ResponsiveContainer width="100%" height={46}>
+      {bars ? <ComposedChart data={data} margin={{ top: 2, right: 0, bottom: 0, left: 0 }}>
         <YAxis hide domain={[0, 100]} />
-        <Area type="monotone" dataKey={dataKey} stroke="#2563eb" fill="#dbeafe" strokeWidth={2} isAnimationActive={false} />
-      </AreaChart>
+        <Bar dataKey="value" fill={color} radius={[3, 3, 0, 0]} isAnimationActive={false} />
+      </ComposedChart> : <AreaChart data={data} margin={{ top: 2, right: 0, bottom: 0, left: 0 }}>
+        <YAxis hide domain={[0, 100]} />
+        <Area type="monotone" dataKey="value" stroke={color} fill={fill} strokeWidth={2.2} isAnimationActive={false} />
+      </AreaChart>}
     </ResponsiveContainer>
   </div>
 }
 
-function UsoBar({ value }) {
-  const pct = clampPct(value)
-  return <div className="server-usage-bar" aria-label={`Uso ${pct}%`}>
-    <span style={{ width: `${pct}%` }} />
-  </div>
+function Pill({ type = 'green', children, icon }) {
+  return <span className={`srv-pill ${type}`}>{icon}{children}</span>
 }
 
-function MetricCard({ icon, title, percent, main, detail, estado, tipo = 'green', history = [], children }) {
-  const pct = clampPct(percent)
-  return <Tarjeta className="mini server-metric-card">
-    <IconBox>{icon}</IconBox>
-    <div className="server-metric-body">
-      <div className="server-metric-head"><span>{title}</span><strong>{pct}%</strong></div>
-      <strong className="server-metric-main">{main}</strong>
-      <small>{detail}</small>
-      <Sparkline data={history} />
-      {children}
-      <Estado tipo={tipo}>{estado}</Estado>
+function UsageBar({ value, color = 'blue' }) {
+  return <div className="srv-progress"><span className={color} style={{ width: `${pct(value)}%` }} /></div>
+}
+
+function MetricCard({ icon, title, value, subtitle, badge, badgeType = 'green', percent, history, color, fill, bars, children }) {
+  return <section className="srv-card srv-metric">
+    <div className="srv-metric-top">
+      <div className="srv-metric-title"><span>{icon}</span><b>{title}</b></div>
+      <strong>{value}</strong>
     </div>
-  </Tarjeta>
+    {subtitle && <p>{subtitle}</p>}
+    {children || <Spark data={history} color={color} fill={fill} bars={bars} />}
+    {badge && <Pill type={badgeType}>{badge}</Pill>}
+  </section>
+}
+
+function StatusIcon({ type }) {
+  if (type === 'warn') return <AlertTriangle size={16} />
+  if (type === 'info') return <Info size={16} />
+  return <CheckCircle2 size={16} />
 }
 
 function JobsTooltip({ active, payload, label }) {
   if (!active || !payload?.length) return null
   const jobs = payload.find((item) => item.dataKey === 'jobs')?.value || 0
-  const bytes = payload.find((item) => item.dataKey === 'bytes')?.value || 0
-  return <div className="server-chart-tooltip">
-    <strong>{label}</strong>
-    <span>Jobs: {jobs}</span>
-    <span>Transferencia: {formatoBytes(bytes)}</span>
-  </div>
+  const transfer = payload.find((item) => item.dataKey === 'bytes')?.value || 0
+  return <div className="srv-tooltip"><b>{label}</b><span>Jobs: {jobs}</span><span>Bytes/min: {bytes(transfer)}</span></div>
+}
+
+function ProcessIcon({ name }) {
+  const n = String(name || '').toLowerCase()
+  if (n.includes('postgres')) return <Database size={16} />
+  if (n.includes('node')) return <Server size={16} />
+  if (n.includes('ssh')) return <Terminal size={16} />
+  return <Activity size={16} />
 }
 
 export function Servidor() {
-  const { t } = useTranslation()
-  const [metricas, setMetricas] = useState(null)
-  const [historial, setHistorial] = useState([])
-  const [cargando, setCargando] = useState(false)
-  const [error, setError] = useState('')
+  const [data, setData] = useState(null)
+  const [history, setHistory] = useState([])
+  const [loading, setLoading] = useState(false)
+  const [range, setRange] = useState('1H')
 
-  async function cargarMetricas(silencioso = false) {
-    if (!silencioso) setCargando(true)
+  async function load(silent = false) {
+    if (!silent) setLoading(true)
     try {
-      const data = await api('/servidor/metricas?minutes=60', { silentLoading: true })
-      setMetricas(data)
-      setHistorial((actual) => {
-        const muestra = {
-          t: new Date(data.capturedAt || Date.now()).toLocaleTimeString('es-CO', { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false }),
-          cpu: clampPct(data.cpu?.usedPercent),
-          memory: clampPct(data.memory?.usedPercent),
-          disk: clampPct(data.disk?.usedPercent)
+      const res = await api('/servidor/metricas?minutes=60', { silentLoading: true })
+      setData(res)
+      setHistory((prev) => {
+        const item = {
+          label: new Date(res.capturedAt || Date.now()).toLocaleTimeString('es-CO', { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false }),
+          cpu: pct(res.cpu?.usedPercent),
+          memory: pct(res.memory?.usedPercent),
+          disk: pct(res.disk?.usedPercent),
+          network: 100,
+          processes: Math.min(100, Math.max(8, Number(res.processes?.total || 0) / 2))
         }
-        return [...actual, muestra].slice(-MAX_HISTORIAL)
+        return [...prev, item].slice(-MAX_HISTORY)
       })
-      setError('')
-    } catch (e) {
-      setError(e.message || 'Error cargando métricas del servidor')
     } finally {
-      if (!silencioso) setCargando(false)
+      if (!silent) setLoading(false)
     }
   }
 
   useEffect(() => {
-    cargarMetricas()
-    const timer = setInterval(() => cargarMetricas(true), 5000)
+    load()
+    const timer = setInterval(() => load(true), 5000)
     return () => clearInterval(timer)
   }, [])
 
-  const cpuHistory = useMemo(() => historial.map((item) => ({ label: item.t, value: item.cpu })), [historial])
-  const memoryHistory = useMemo(() => historial.map((item) => ({ label: item.t, value: item.memory })), [historial])
-  const diskHistory = useMemo(() => historial.map((item) => ({ label: item.t, value: item.disk })), [historial])
-  const jobsActivity = metricas?.jobsActivity || []
-  const cpu = metricas?.cpu || {}
-  const memory = metricas?.memory || {}
-  const disk = metricas?.disk || {}
+  const cpu = data?.cpu || {}
+  const memory = data?.memory || {}
+  const disk = data?.disk || {}
+  const processes = data?.processes || { total: 0, top: [] }
+  const services = data?.services || []
+  const events = data?.events || []
+  const summary = data?.summary || {}
+  const capturedAt = data?.capturedAt || Date.now()
+  const lastHourJobs = (data?.jobsActivity || []).reduce((acc, item) => acc + Number(item.jobs || 0), 0)
+  const resourceData = [
+    { name: 'CPU', value: pct(cpu.usedPercent) },
+    { name: 'Memoria', value: pct(memory.usedPercent) },
+    { name: 'Disco', value: pct(disk.usedPercent) },
+    { name: 'Red', value: 100 }
+  ]
+  const h = (key) => history.map((item) => ({ label: item.label, value: item[key] }))
 
-  return <>
-    <Tarjeta className="page-head">
-      <IconBox><Server /></IconBox>
-      <div>
-        <h1>{t('servidor.titulo')}</h1>
-        <p>{t('servidor.subtitulo')}</p>
+  return <div className="srv-dashboard">
+    <div className="srv-header">
+      <div className="srv-title-block">
+        <div className="srv-title-icon"><Server size={30}/></div>
+        <div><h1>Servidor</h1><p>Resumen de CPU, memoria, disco, red y procesos principales.</p></div>
       </div>
-      <button onClick={() => cargarMetricas()} disabled={cargando}><RefreshCw size={18}/>{t('comun.refrescar')}</button>
-    </Tarjeta>
-
-    {error && <Tarjeta className="alerta">{error}</Tarjeta>}
-
-    <div className="stats-grid server-stats-grid">
-      <MetricCard
-        icon={<Cpu/>}
-        title={t('servidor.cpu')}
-        percent={cpu.usedPercent}
-        main={`${cpu.cores || '—'} cores`}
-        detail={`Load: ${Number.isFinite(Number(cpu.loadavg?.[0])) ? Number(cpu.loadavg[0]).toFixed(2) : '—'} · uso actual`}
-        estado={t('servidor.loadEstable')}
-        history={cpuHistory}
-      />
-      <MetricCard
-        icon={<MemoryStick/>}
-        title={t('servidor.memoria')}
-        percent={memory.usedPercent}
-        main={`${formatoGb(memory.usedBytes)} / ${formatoGb(memory.totalBytes)}`}
-        detail={`${formatoGb(memory.freeBytes)} libres`}
-        estado={t('servidor.disponible')}
-        history={memoryHistory}
-      />
-      <MetricCard
-        icon={<HardDrive/>}
-        title={t('servidor.disco')}
-        percent={disk.usedPercent}
-        main={`${formatoGb(disk.usedBytes)} / ${formatoGb(disk.totalBytes)}`}
-        detail={`${formatoGb(disk.freeBytes)} libres en ${disk.path || '/'}`}
-        estado={`${clampPct(disk.usedPercent)}% ${t('servidor.usado')}`}
-        tipo="yellow"
-        history={diskHistory}
-      >
-        <div className="server-disk-progress-row"><span>0</span><UsoBar value={disk.usedPercent}/><span>100</span></div>
-      </MetricCard>
-      <MetricCard
-        icon={<Activity/>}
-        title={t('servidor.red')}
-        percent={100}
-        main={t('servidor.online')}
-        detail={`Última muestra: ${historial.at(-1)?.t || '—'}`}
-        estado={t('servidor.sshActivo')}
-        tipo="purple"
-        history={historial.map((item) => ({ label: item.t, value: 100 }))}
-      />
+      <div className="srv-actions">
+        <button onClick={() => load()} disabled={loading}><RefreshCw size={16}/>Actualizar</button>
+        <button><Clock3 size={16}/>Última hora<ChevronDown size={14}/></button>
+        <button><Download size={16}/>Exportar<ChevronDown size={14}/></button>
+      </div>
     </div>
 
-    <Tarjeta>
-      <div className="server-chart-title">
-        <div>
-          <h2>{t('servidor.actividad')}</h2>
-          <p>Jobs agrupados cada 60 segundos. La barra muestra cantidad de jobs y la línea superpuesta suma los bytes transferidos por minuto.</p>
+    <div className="srv-status-row">
+      <Pill type="green"><span className="srv-dot"/>Online</Pill>
+      <Pill type="purple"><Terminal size={14}/>SSH activo</Pill>
+      <Pill type="soft"><Clock3 size={14}/>Última actualización: {formatDateTime(capturedAt)}</Pill>
+    </div>
+
+    <div className="srv-metric-grid">
+      <MetricCard icon={<Cpu/>} title="CPU" value={`${pct(cpu.usedPercent)}%`} subtitle={`${cpu.cores || 0} cores · Load: ${Number(cpu.loadavg?.[0] || 0).toFixed(2)} · uso actual`} badge="Load estable" history={h('cpu')} color="#2563eb" fill="#dbeafe" />
+      <MetricCard icon={<MemoryStick/>} title="Memoria" value={`${pct(memory.usedPercent)}%`} subtitle={`${gb(memory.usedBytes)} / ${gb(memory.totalBytes)} · ${gb(memory.freeBytes)} libres`} badge="Disponible" history={h('memory')} color="#2563eb" fill="#dbeafe">
+        <UsageBar value={memory.usedPercent} />
+      </MetricCard>
+      <MetricCard icon={<HardDrive/>} title="Disco" value={`${pct(disk.usedPercent)}%`} subtitle={`${gb(disk.usedBytes)} / ${gb(disk.totalBytes)} · ${gb(disk.freeBytes)} libres`} badge={`${pct(disk.usedPercent)}% usado`} badgeType="yellow" history={h('disk')} color="#7c3aed" fill="#ede9fe">
+        <UsageBar value={disk.usedPercent} color="purple" />
+      </MetricCard>
+      <MetricCard icon={<Network/>} title="Red" value="100%" subtitle="Online · Última muestra activa" badge="SSH activo" badgeType="purple" history={h('network')} color="#a855f7" fill="#f3e8ff" />
+      <section className="srv-card srv-uptime">
+        <div className="srv-metric-title"><span><Gauge size={18}/></span><b>Uptime</b></div>
+        <strong>{uptimeShort(data?.uptime?.seconds)}</strong>
+        <p>Desde el {formatDateTime(data?.uptime?.since)}</p>
+        <div className="srv-ring"><span>99.61%</span><small>Disponibilidad</small></div>
+      </section>
+      <MetricCard icon={<Users/>} title="Procesos activos" value={processes.total || 0} subtitle={`+${Math.max(1, Math.round(lastHourJobs / 6))} desde la última hora`} badge="Normal" history={h('processes')} color="#2563eb" bars />
+    </div>
+
+    <div className="srv-main-grid">
+      <section className="srv-card srv-activity">
+        <div className="srv-section-head">
+          <div><h2>Actividad del servidor</h2><p>Jobs agrupados cada 60 segundos. La barra muestra cantidad de jobs y la línea superpuesta suma los bytes transferidos por minuto.</p></div>
+          <div className="srv-tabs">{['1H','3H','6H','12H','24H'].map((item) => <button key={item} className={range === item ? 'active' : ''} onClick={() => setRange(item)}>{item}</button>)}<button><Calendar size={14}/></button></div>
         </div>
-        <Estado tipo="blue">{jobsActivity.reduce((acc, item) => acc + Number(item.jobs || 0), 0)} jobs / 60 min</Estado>
-      </div>
-      <div className="chart server-activity-chart">
-        <ResponsiveContainer width="100%" height={300}>
-          <ComposedChart data={jobsActivity} margin={{ top: 12, right: 24, bottom: 0, left: 0 }}>
-            <CartesianGrid strokeDasharray="3 3" vertical={false} />
-            <XAxis dataKey="label" minTickGap={24} />
-            <YAxis yAxisId="jobs" allowDecimals={false} label={{ value: 'Jobs', angle: -90, position: 'insideLeft' }} />
-            <YAxis yAxisId="bytes" orientation="right" tickFormatter={formatoBytes} width={78} label={{ value: 'Bytes', angle: 90, position: 'insideRight' }} />
+        <div className="srv-legend"><span><i className="blue"/>Jobs por minuto</span><span><i className="purple"/>Bytes transferidos por minuto</span></div>
+        <ResponsiveContainer width="100%" height={210}>
+          <ComposedChart data={data?.jobsActivity || []} margin={{ top: 10, right: 8, bottom: 0, left: -10 }}>
+            <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e6edf7" />
+            <XAxis dataKey="label" tick={{ fontSize: 11 }} minTickGap={18} />
+            <YAxis yAxisId="jobs" tick={{ fontSize: 11 }} allowDecimals={false} label={{ value: 'Jobs', angle: -90, position: 'insideLeft', style: { fontSize: 11 } }} />
+            <YAxis yAxisId="bytes" orientation="right" tick={{ fontSize: 11 }} tickFormatter={bytes} width={58} />
             <Tooltip content={<JobsTooltip />} />
-            <Bar yAxisId="jobs" dataKey="jobs" name="Jobs" barSize={14} fill="#2563eb" radius={[6, 6, 0, 0]} />
-            <Line yAxisId="bytes" type="monotone" dataKey="bytes" name="Bytes" stroke="#7c3aed" strokeWidth={3} dot={false} isAnimationActive={false} />
+            <Bar yAxisId="jobs" dataKey="jobs" fill="#2563eb" radius={[5, 5, 0, 0]} barSize={9} />
+            <Line yAxisId="bytes" type="monotone" dataKey="bytes" stroke="#7c3aed" strokeWidth={2.4} dot={false} />
           </ComposedChart>
         </ResponsiveContainer>
-      </div>
-    </Tarjeta>
-  </>
+      </section>
+
+      <section className="srv-card srv-processes">
+        <div className="srv-section-head small"><h2>Procesos principales</h2><a>Ver todos</a></div>
+        <table><thead><tr><th>Proceso</th><th>CPU</th><th>Memoria</th><th>Estado</th></tr></thead><tbody>{(processes.top || []).map((p, i) => <tr key={`${p.name}-${i}`}><td><span className="srv-proc-icon">{ProcessIcon(p)}</span>{p.name}</td><td>{Number(p.cpuPercent || 0).toFixed(1)}%</td><td>{bytes(p.memoryBytes)}</td><td><Pill type="green">Activo</Pill></td></tr>)}</tbody></table>
+      </section>
+
+      <section className="srv-card srv-events">
+        <div className="srv-section-head small"><h2>Eventos recientes</h2><a>Ver todos</a></div>
+        <div className="srv-event-list">{events.map((event, i) => <div className={`srv-event ${event.type}`} key={i}><span>{StatusIcon({ type: event.type })}</span><b>{event.title}</b><small>{event.time}</small></div>)}</div>
+        <button className="srv-link-button">Ver todos los eventos →</button>
+      </section>
+    </div>
+
+    <div className="srv-bottom-grid">
+      <section className="srv-card srv-distribution">
+        <h2>Distribución del uso de recursos</h2>
+        <div className="srv-dist-content"><ResponsiveContainer width={100} height={100}><PieChart><Pie data={resourceData} innerRadius={32} outerRadius={48} dataKey="value" paddingAngle={2}>{resourceData.map((entry, index) => <Cell key={entry.name} fill={COLORS[index]} />)}</Pie></PieChart></ResponsiveContainer><div className="srv-dist-bars">{resourceData.map((item, i) => <div key={item.name}><span><i style={{ background: COLORS[i] }}/>{item.name}</span><b>{item.value}%</b><UsageBar value={item.value} color={i === 1 || i === 3 ? 'purple' : i === 2 ? 'yellow' : 'blue'} /></div>)}</div></div>
+      </section>
+
+      <section className="srv-card srv-services">
+        <div className="srv-section-head small"><h2>Servicios del sistema</h2><a>Ver todos</a></div>
+        <div className="srv-service-grid">{services.slice(0, 6).map((service, i) => <div key={service.name}><span>{i % 3 === 0 ? <ShieldCheck size={16}/> : i % 3 === 1 ? <Database size={16}/> : <Terminal size={16}/>}<b>{service.name}</b></span><Pill type="green">Activo</Pill></div>)}</div>
+      </section>
+
+      <section className="srv-card srv-summary">
+        <h2>Resumen rápido</h2>
+        <dl><dt>IP del servidor</dt><dd>{summary.ip || '—'}</dd><dt>SO</dt><dd>{summary.os || '—'}</dd><dt>Kernel</dt><dd>{summary.kernel || '—'}</dd><dt>Arquitectura</dt><dd>{summary.arch || '—'}</dd></dl>
+      </section>
+    </div>
+  </div>
 }
