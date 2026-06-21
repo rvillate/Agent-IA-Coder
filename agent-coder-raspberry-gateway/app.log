@@ -1,8 +1,0 @@
-nohup: ignoring input
-
-> agent-coder-raspberry-gateway@1.0.0 start
-> node server/index.js
-
-Agent Coder Raspberry Gateway listo en http://0.0.0.0:8787
-DB central: /home/pi/Agent-IA-Coder/agent-coder-raspberry-gateway/data/agent-coder.central.json
-OpenAPI: /api/openapi.json

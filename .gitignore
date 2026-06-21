@@ -1,2 +1,41 @@
+# secrets / env
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.crt
+*.p12
+*.pfx
 
-agent-coder-runs/
+# dependencies
+node_modules/
+.pnpm-store/
+
+# build/runtime output
+dist/
+build/
+coverage/
+logs/
+*.log
+*.pid
+*.pid.lock
+
+# generated runtime data
+ServerAgent/data/*.json
+ServerAgent/data/*.state
+ServerAgent/data/*.log
+RunnerAgent/logs/
+backups/
+
+# OS/editor
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# temporary/backups
+*.bak
+*.bak-*
+*.tmp
+*.swp

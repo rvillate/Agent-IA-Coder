@@ -1,7 +1,0 @@
-node_modules/
-.env
-data/*.json
-data/backups/
-logs/*.log
-.DS_Store
-data/*.json.tmp
