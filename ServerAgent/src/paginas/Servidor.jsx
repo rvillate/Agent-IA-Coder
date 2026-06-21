@@ -1,9 +1,9 @@
 import React, { useEffect, useMemo, useState } from 'react'
-import { Activity, AlertTriangle, BarChart3, Calendar, CheckCircle2, ChevronDown, Clock3, Cpu, Database, Download, Gauge, Globe2, HardDrive, Info, MemoryStick, Network, RefreshCw, Server, ShieldCheck, Terminal, Users } from 'lucide-react'
+import { Activity, AlertTriangle, Calendar, CheckCircle2, ChevronDown, Clock3, Cpu, Database, Download, Gauge, HardDrive, Info, MemoryStick, Network, RefreshCw, Server, ShieldCheck, Terminal, Trash2, Users } from 'lucide-react'
 import { Area, AreaChart, Bar, CartesianGrid, ComposedChart, Line, Pie, PieChart, ResponsiveContainer, Tooltip, XAxis, YAxis, Cell } from 'recharts'
 import { api } from '../servicios/api.js'
 
-const MAX_HISTORY = 28
+const RANGE_MINUTES = { '1H': 60, '3H': 180, '6H': 360, '12H': 720, '24H': 1440 }
 const COLORS = ['#2563eb', '#7c3aed', '#f6bd38', '#a855f7']
 
 function pct(value) {
@@ -104,21 +104,32 @@ export function Servidor() {
   async function load(silent = false) {
     if (!silent) setLoading(true)
     try {
-      const res = await api('/servidor/metricas?minutes=60', { silentLoading: true })
+      const minutes = RANGE_MINUTES[range] || 60
+      const res = await api(`/servidor/metricas?minutes=${minutes}`, { silentLoading: true })
       setData(res)
-      setHistory((prev) => {
-        const item = {
-          label: new Date(res.capturedAt || Date.now()).toLocaleTimeString('es-CO', { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false }),
-          cpu: pct(res.cpu?.usedPercent),
-          memory: pct(res.memory?.usedPercent),
-          disk: pct(res.disk?.usedPercent),
-          network: 100,
-          processes: Math.min(100, Math.max(8, Number(res.processes?.total || 0) / 2))
-        }
-        return [...prev, item].slice(-MAX_HISTORY)
-      })
+      const historial = Array.isArray(res.resourceHistory) ? res.resourceHistory : []
+      setHistory(historial.map((item) => ({
+        label: item.label,
+        cpu: pct(item.cpu),
+        memory: pct(item.memory),
+        disk: pct(item.disk),
+        network: pct(item.network || 100),
+        processes: pct(item.processes)
+      })))
     } finally {
       if (!silent) setLoading(false)
+    }
+  }
+
+  async function limpiarHistorial() {
+    if (!window.confirm('¿Limpiar el historial de métricas del servidor?')) return
+    setLoading(true)
+    try {
+      await api('/servidor/metricas/historial', { method: 'DELETE', silentLoading: true })
+      setHistory([])
+      setData((actual) => actual ? { ...actual, resourceHistory: [] } : actual)
+    } finally {
+      setLoading(false)
     }
   }
 
@@ -126,7 +137,7 @@ export function Servidor() {
     load()
     const timer = setInterval(() => load(true), 5000)
     return () => clearInterval(timer)
-  }, [])
+  }, [range])
 
   const cpu = data?.cpu || {}
   const memory = data?.memory || {}
@@ -153,6 +164,7 @@ export function Servidor() {
       </div>
       <div className="srv-actions">
         <button onClick={() => load()} disabled={loading}><RefreshCw size={16}/>Actualizar</button>
+        <button onClick={limpiarHistorial} disabled={loading} title="Limpia la tabla histórica de métricas del servidor"><Trash2 size={16}/>Limpiar historial</button>
         <button><Clock3 size={16}/>Última hora<ChevronDown size={14}/></button>
         <button><Download size={16}/>Exportar<ChevronDown size={14}/></button>
       </div>

@@ -23,6 +23,7 @@ const __filename=fileURLToPath(import.meta.url), __dirname=path.dirname(__filena
 const app=express(); app.set('trust proxy',true); app.use(helmet({contentSecurityPolicy:false})); app.use(cors()); app.use(compression()); app.use(express.json({limit:env.bodyLimit}))
 
 const execFileAsync = promisify(execFile)
+const HISTORICO_SERVIDOR_KEY = '__server__'
 let ultimaCpuStat = null
 
 async function leerCpuStat() {
@@ -152,6 +153,99 @@ function eventosRecientes(disk, jobsActivity) {
   ]
 }
 
+
+let historicoServidorReady = false
+
+async function asegurarTablaHistoricoServidor() {
+  if (historicoServidorReady) return
+  await consulta(`CREATE TABLE IF NOT EXISTS aplicacion.servidor_metricas_historico (
+    id bigserial PRIMARY KEY,
+    gateway_id text NOT NULL,
+    capturado_en timestamptz NOT NULL DEFAULT now(),
+    cpu_percent integer,
+    memory_percent integer,
+    memory_total_bytes bigint,
+    memory_used_bytes bigint,
+    memory_free_bytes bigint,
+    disk_percent integer,
+    disk_total_bytes bigint,
+    disk_used_bytes bigint,
+    disk_free_bytes bigint,
+    processes_total integer,
+    loadavg jsonb DEFAULT '[]'::jsonb
+  )`)
+  await consulta(`CREATE INDEX IF NOT EXISTS idx_servidor_metricas_gateway_capturado ON aplicacion.servidor_metricas_historico(gateway_id, capturado_en DESC)`)
+  historicoServidorReady = true
+}
+
+async function guardarHistoricoServidor(gatewayId, muestra) {
+  await asegurarTablaHistoricoServidor()
+  await consulta(`INSERT INTO aplicacion.servidor_metricas_historico(
+    gateway_id, cpu_percent, memory_percent, memory_total_bytes, memory_used_bytes, memory_free_bytes,
+    disk_percent, disk_total_bytes, disk_used_bytes, disk_free_bytes, processes_total, loadavg
+  ) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)`, [
+    gatewayId,
+    muestra.cpu?.usedPercent ?? null,
+    muestra.memory?.usedPercent ?? null,
+    muestra.memory?.totalBytes ?? null,
+    muestra.memory?.usedBytes ?? null,
+    muestra.memory?.freeBytes ?? null,
+    muestra.disk?.usedPercent ?? null,
+    muestra.disk?.totalBytes ?? null,
+    muestra.disk?.usedBytes ?? null,
+    muestra.disk?.freeBytes ?? null,
+    muestra.processes?.total ?? null,
+    JSON.stringify(muestra.cpu?.loadavg || [])
+  ])
+}
+
+async function historialServidor(gatewayId, minutos = 60) {
+  await asegurarTablaHistoricoServidor()
+  const limit = Math.max(5, Math.min(Number(minutos || 60), 1440))
+  const { rows } = await consulta(`SELECT capturado_en, cpu_percent, memory_percent, disk_percent, processes_total,
+      memory_used_bytes, memory_total_bytes, disk_used_bytes, disk_total_bytes
+    FROM aplicacion.servidor_metricas_historico
+    WHERE gateway_id=$1 AND capturado_en >= now() - ($2::int * interval '1 minute')
+    ORDER BY capturado_en ASC`, [gatewayId, limit])
+  return rows.map((row) => ({
+    capturedAt: new Date(row.capturado_en).getTime(),
+    label: new Date(row.capturado_en).toLocaleTimeString('es-CO', { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false }),
+    cpu: Number(row.cpu_percent || 0),
+    memory: Number(row.memory_percent || 0),
+    disk: Number(row.disk_percent || 0),
+    network: 100,
+    processes: Math.min(100, Math.max(0, Number(row.processes_total || 0) / 2)),
+    processesTotal: Number(row.processes_total || 0),
+    memoryUsedBytes: Number(row.memory_used_bytes || 0),
+    memoryTotalBytes: Number(row.memory_total_bytes || 0),
+    diskUsedBytes: Number(row.disk_used_bytes || 0),
+    diskTotalBytes: Number(row.disk_total_bytes || 0)
+  }))
+}
+
+async function capturarHistoricoServidorGlobal() {
+  try {
+    const memoryTotal = os.totalmem()
+    const memoryFree = os.freemem()
+    const memoryUsed = memoryTotal - memoryFree
+    const disk = await discoPrincipal()
+    const processes = await procesosServidor()
+    await guardarHistoricoServidor(HISTORICO_SERVIDOR_KEY, {
+      cpu: { loadavg: os.loadavg(), usedPercent: await usoCpuPorcentaje() },
+      memory: {
+        totalBytes: memoryTotal,
+        usedBytes: memoryUsed,
+        freeBytes: memoryFree,
+        usedPercent: Math.round((memoryUsed / Math.max(1, memoryTotal)) * 100)
+      },
+      disk,
+      processes
+    })
+  } catch (e) {
+    console.error('No se pudo guardar histórico de servidor', e.message || e)
+  }
+}
+
 async function responderHealth(req, res, next) {
   try {
     const db = await consulta('SELECT now() as ahora')
@@ -164,15 +258,16 @@ app.get('/health', responderHealth)
 
 app.get('/api/servidor/metricas', authUsuario, async (req, res, next) => {
   try {
+    const minutes = Number(req.query.minutes || 60)
     const memoryTotal = os.totalmem()
     const memoryFree = os.freemem()
     const memoryUsed = memoryTotal - memoryFree
     const disk = await discoPrincipal()
-    const jobsActivity = await actividadJobs(req.cuenta.gateway_id, Number(req.query.minutes || 60))
+    const jobsActivity = await actividadJobs(req.cuenta.gateway_id, minutes)
     const processes = await procesosServidor()
     const services = await serviciosSistema()
     const summary = await resumenSistema()
-    res.json({
+    const muestra = {
       ok: true,
       capturedAt: Date.now(),
       cpu: {
@@ -194,7 +289,17 @@ app.get('/api/servidor/metricas', authUsuario, async (req, res, next) => {
       events: eventosRecientes(disk, jobsActivity),
       summary,
       jobsActivity
-    })
+    }
+    muestra.resourceHistory = await historialServidor(HISTORICO_SERVIDOR_KEY, minutes)
+    res.json(muestra)
+  } catch (e) { next(e) }
+})
+
+app.delete('/api/servidor/metricas/historial', authUsuario, async (req, res, next) => {
+  try {
+    await asegurarTablaHistoricoServidor()
+    const r = await consulta('DELETE FROM aplicacion.servidor_metricas_historico WHERE gateway_id=$1', [HISTORICO_SERVIDOR_KEY])
+    res.json({ ok: true, deleted: r.rowCount })
   } catch (e) { next(e) }
 })
 
@@ -426,4 +531,8 @@ app.use(express.static(path.join(raiz,'dist')))
 app.get(/^\/(?!api).*/, (req,res)=>res.sendFile(path.join(raiz,'dist','index.html')))
 
 app.use((error,req,res,next)=>{console.error(error); res.status(400).json({ok:false,error:error.message||'Error interno'})})
+const historicoTimer = setInterval(capturarHistoricoServidorGlobal, 5000)
+if (typeof historicoTimer.unref === 'function') historicoTimer.unref()
+setTimeout(capturarHistoricoServidorGlobal, 1200)
+
 app.listen(env.port,env.host,()=>console.log(`Server-Agent listo en http://${env.host}:${env.port}`))
