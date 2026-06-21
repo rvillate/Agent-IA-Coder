@@ -173,3 +173,48 @@ button:disabled{opacity:.5;cursor:not-allowed;transform:none!important}
 
 /* Ajuste fino servidor para encajar como referencia */
 .srv-dashboard{gap:12px!important}.srv-header{margin-top:0!important;margin-bottom:6px!important}.srv-title-icon{width:58px!important;height:58px!important}.srv-status-row{margin-bottom:0!important}.srv-metric-grid{gap:10px!important}.srv-card{border-radius:13px!important}.srv-metric,.srv-uptime{height:176px!important}.srv-main-grid,.srv-bottom-grid{gap:10px!important}.srv-activity,.srv-processes,.srv-events{height:272px!important}.srv-bottom-grid .srv-card{height:132px!important}.srv-section-head h2,.srv-card h2{font-size:14px!important}.srv-processes th,.srv-processes td{padding-top:6px!important;padding-bottom:6px!important}.srv-event{padding:8px 0!important}.srv-ring{width:86px!important;height:86px!important}.srv-dashboard .srv-actions button{height:40px!important}.srv-tabs button{height:24px!important}.srv-activity .recharts-wrapper{margin-top:-2px!important}
+
+/* Ajuste visual Servidor: contener gráficas sin cambiar tipo */
+.srv-metric,
+.srv-uptime{
+  min-height:190px!important;
+  height:190px!important;
+  overflow:hidden!important;
+}
+.srv-uptime{
+  align-content:start!important;
+  gap:5px!important;
+}
+.srv-ring{
+  width:72px!important;
+  height:72px!important;
+  margin:2px auto 0!important;
+  flex:none!important;
+}
+.srv-ring span{font-size:12px!important;line-height:1!important}.srv-ring small{font-size:8px!important;line-height:1.05!important}
+.srv-activity,
+.srv-processes,
+.srv-events{
+  min-height:310px!important;
+  height:310px!important;
+  overflow:hidden!important;
+}
+.srv-activity .recharts-responsive-container{
+  height:198px!important;
+}
+.srv-bottom-grid .srv-card{
+  min-height:170px!important;
+  height:170px!important;
+  overflow:hidden!important;
+}
+.srv-dist-content{
+  grid-template-columns:90px minmax(0,1fr)!important;
+  gap:10px!important;
+  align-items:center!important;
+  margin-top:2px!important;
+}
+.srv-distribution .recharts-responsive-container{
+  width:86px!important;
+  height:86px!important;
+}
+.srv-dist-bars{gap:6px!important}.srv-dist-bars>div{grid-template-columns:74px 32px minmax(0,1fr)!important;gap:6px!important}.srv-dist-bars .srv-progress{height:6px!important}.srv-service-grid{gap:7px 14px!important}.srv-summary dl{gap:7px 10px!important}
