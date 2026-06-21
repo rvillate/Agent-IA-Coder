@@ -25,6 +25,11 @@ import {
   browserDrag,
   browserScreenshot,
   browserEval,
+  browserInspect,
+  browserFill,
+  browserSubmit,
+  browserResize,
+  browserStorage,
   browserClose,
   listBrowserPreviews
 } from './browser.js'
@@ -49,6 +54,11 @@ const capabilities = [
   'browser.drag',
   'browser.screenshot',
   'browser.eval',
+  'browser.inspect',
+  'browser.fill',
+  'browser.submit',
+  'browser.resize',
+  'browser.storage',
   'browser.close'
 ]
 
@@ -341,6 +351,26 @@ async function executeJob(job) {
       case 'browser.eval':
         result = await browserEval(payload, guard, config)
         await update(job, { status: 'success', result, summary: 'Evaluación ejecutada en browser', truncated: false })
+        break
+      case 'browser.inspect':
+        result = await browserInspect(payload, guard, config)
+        await update(job, { status: 'success', result, summary: `Inspección browser: ${result.snapshot?.elements?.length || 0} elemento(s)`, truncated: false })
+        break
+      case 'browser.fill':
+        result = await browserFill(payload, guard, config)
+        await update(job, { status: 'success', result, summary: `Formulario rellenado: ${result.fields?.filter((x) => x.ok).length || 0}/${result.fields?.length || 0}`, truncated: false })
+        break
+      case 'browser.submit':
+        result = await browserSubmit(payload, guard, config)
+        await update(job, { status: 'success', result, summary: `Submit ejecutado en browser: ${result.url}`, truncated: false })
+        break
+      case 'browser.resize':
+        result = await browserResize(payload, guard, config)
+        await update(job, { status: 'success', result, summary: `Viewport browser: ${result.viewport?.width}x${result.viewport?.height}`, truncated: false })
+        break
+      case 'browser.storage':
+        result = await browserStorage(payload, guard, config)
+        await update(job, { status: 'success', result, summary: 'Storage browser inspeccionado', truncated: false })
         break
       case 'browser.close':
         result = await browserClose(payload, guard, config)

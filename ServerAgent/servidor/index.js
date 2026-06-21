@@ -42,6 +42,11 @@ function localBrowserCommands() {
       { type: 'browser.drag', description: 'Arrastra de un punto/selector a otro.', payload: { from: { x: 10, y: 10 }, to: { x: 200, y: 200 } } },
       { type: 'browser.screenshot', description: 'Captura pantalla del navegador.', payload: { fullPage: true } },
       { type: 'browser.eval', description: 'Ejecuta JavaScript en la página abierta.', payload: { script: 'document.title' } },
+      { type: 'browser.inspect', description: 'Devuelve un snapshot accesible de la página: formularios, campos, botones, links, headings, alertas y selectores candidatos.', payload: { maxItems: 80, includeStorage: false } },
+      { type: 'browser.fill', description: 'Rellena varios campos con Playwright y verifica valores para apps SPA/React.', payload: { fields: [{ label: 'Email', value: 'demo@example.com' }, { label: 'Contraseña', value: 'secret' }] } },
+      { type: 'browser.submit', description: 'Rellena opcionalmente campos y envía/clickea un botón esperando navegación, red, texto o URL.', payload: { fields: [], text: 'Entrar', expectNavigation: true, waitForNetworkIdle: true } },
+      { type: 'browser.resize', description: 'Cambia el viewport de una sesión existente.', payload: { width: 1365, height: 768 } },
+      { type: 'browser.storage', description: 'Lista cookies y claves local/sessionStorage con valores sensibles redactados.', payload: { includeValues: false } },
       { type: 'browser.close', description: 'Cierra el navegador del runner.', payload: {} }
     ]
   }
@@ -58,7 +63,7 @@ function publicBaseUrl(req) {
 function localOpenApi(req) {
   const jobTypes = [
     'shell.exec', 'file.list', 'file.read', 'file.write', 'file.delete', 'file.mkdir', 'file.search', 'git.status', 'git.diff',
-    'browser.open', 'browser.click', 'browser.type', 'browser.drag', 'browser.screenshot', 'browser.eval', 'browser.close'
+    'browser.open', 'browser.click', 'browser.type', 'browser.drag', 'browser.screenshot', 'browser.eval', 'browser.inspect', 'browser.fill', 'browser.submit', 'browser.resize', 'browser.storage', 'browser.close'
   ]
   const createJobSchema = {
     type: 'object',
