@@ -35,6 +35,21 @@ function formatoFecha(valor) {
   return Number.isNaN(fecha.getTime()) ? '—' : fecha.toLocaleString()
 }
 
+
+function formatoBytes(valor) {
+  const n = Number(valor || 0)
+  if (!Number.isFinite(n) || n <= 0) return '0 B'
+  const unidades = ['B', 'KB', 'MB', 'GB']
+  let size = n
+  let i = 0
+  while (size >= 1024 && i < unidades.length - 1) {
+    size /= 1024
+    i += 1
+  }
+  const decimales = i === 0 ? 0 : size >= 10 ? 1 : 2
+  return `${size.toFixed(decimales)} ${unidades[i]}`
+}
+
 function formatoDuracion(job = {}) {
   const inicio = Number(job.startedAt || job.iniciado_en || 0)
   const fin = Number(job.finishedAt || job.terminado_en || 0)
@@ -255,7 +270,7 @@ export function Runners() {
       </div>
       <div className="runner-jobs-table-wrap">
         <table className="runner-jobs-table">
-          <thead><tr><th>Fecha</th><th>ID</th><th>Tipo</th><th>Estado</th><th>Tiempo ejecución</th><th>Exit</th><th>Resumen</th><th>Acciones</th></tr></thead>
+          <thead><tr><th>Fecha</th><th>ID</th><th>Tipo</th><th>Estado</th><th>Tiempo ejecución</th><th>Size</th><th>Exit</th><th>Resumen</th><th>Acciones</th></tr></thead>
           <tbody>
             {jobsVisibles.map((job) => <tr key={job.id} className={jobDetalle?.id === job.id ? 'selected-row' : ''} onClick={() => abrirJob(job)}>
               <td>{formatoFecha(job.createdAt)}</td>
@@ -263,11 +278,12 @@ export function Runners() {
               <td>{job.type}</td>
               <td><span className={`pill ${estadoClase(job.status)}`}>{job.status}</span></td>
               <td><Clock3 size={13}/> {formatoDuracion(job)}</td>
+              <td title={`${Number(job.transferSizeBytes || 0).toLocaleString()} bytes transferidos`}><strong>{formatoBytes(job.transferSizeBytes)}</strong></td>
               <td>{job.exitCode ?? '—'}</td>
               <td className="job-summary" title={job.summary || job.error || ''}>{job.summary || job.error || job.note || '—'}</td>
               <td><button className="danger-inline" disabled={TERMINALES.has(job.status)} onClick={(e) => { e.stopPropagation(); cancelar(job.id) }}><Ban size={13}/> Cancelar</button></td>
             </tr>)}
-            {!jobs.length && <tr><td colSpan="8" className="table-empty">{cargandoJobs ? 'Actualizando jobs...' : 'Sin jobs para este runner'}</td></tr>}
+            {!jobs.length && <tr><td colSpan="9" className="table-empty">{cargandoJobs ? 'Actualizando jobs...' : 'Sin jobs para este runner'}</td></tr>}
           </tbody>
         </table>
       </div>
@@ -290,7 +306,7 @@ export function Runners() {
         </div>
       </div>
       <div className="runner-stats-grid compact">
-        <Stat label="Estado" value={jobDetalle.status}/><Stat label="Tipo" value={jobDetalle.type}/><Stat label="Runner target" value={jobDetalle.runnerTarget}/><Stat label="Claimed by" value={jobDetalle.claimedBy}/>
+        <Stat label="Estado" value={jobDetalle.status}/><Stat label="Tipo" value={jobDetalle.type}/><Stat label="Size transferencia" value={formatoBytes(jobDetalle.transferSizeBytes)}/><Stat label="Runner target" value={jobDetalle.runnerTarget}/><Stat label="Claimed by" value={jobDetalle.claimedBy}/>
         <Stat label="Creado" value={formatoFecha(jobDetalle.createdAt)}/><Stat label="Actualizado" value={formatoFecha(jobDetalle.updatedAt)}/><Stat label="Iniciado" value={formatoFecha(jobDetalle.startedAt)}/><Stat label="Terminado" value={formatoFecha(jobDetalle.finishedAt)}/>
       </div>
       <div className="job-json-grid">
