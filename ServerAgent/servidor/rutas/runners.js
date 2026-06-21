@@ -21,7 +21,9 @@ function normalizarRunner(runner = {}) {
     version: runner.version || null,
     maxConcurrentJobs: runner.maxConcurrentJobs || runner.max_concurrent_jobs || 1,
     activeJobs: runner.activeJobs || runner.trabajos_activos || [],
-    capabilities: runner.capabilities || runner.capacidades || []
+    capabilities: runner.capabilities || runner.capacidades || [],
+    metrics: runner.metrics || runner.metricas || {},
+    browserPreviews: runner.browserPreviews || runner.metrics?.browserPreviews || runner.metricas?.browserPreviews || []
   }
 }
 

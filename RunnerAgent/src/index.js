@@ -25,7 +25,8 @@ import {
   browserDrag,
   browserScreenshot,
   browserEval,
-  browserClose
+  browserClose,
+  listBrowserPreviews
 } from './browser.js'
 
 const config = getConfig()
@@ -167,6 +168,7 @@ function jobError(job, message, error) {
 }
 
 async function runnerPayload(status = 'online') {
+  const browserPreviews = await listBrowserPreviews({ includeScreenshot: true })
   return {
     runnerId: config.runnerId,
     status,
@@ -181,7 +183,11 @@ async function runnerPayload(status = 'online') {
     activeJobDetails: activeJobDetails(),
     queuedJobDetails: queuedJobDetails(),
     capabilities,
-    metrics: await runnerMetrics(config, activeJobDetails(), queuedJobDetails()),
+    metrics: {
+      ...(await runnerMetrics(config, activeJobDetails(), queuedJobDetails())),
+      browserPreviews
+    },
+    browserPreviews,
     lastJobs: jobHistory
   }
 }

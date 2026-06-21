@@ -137,6 +137,43 @@ async function waitAfter(page, payload) {
   if (payload.waitMs) await page.waitForTimeout(toNumber(payload.waitMs, 0))
 }
 
+
+export async function listBrowserPreviews(options = {}) {
+  const includeScreenshot = options.includeScreenshot !== false
+  const previews = []
+  for (const [id, session] of sessions.entries()) {
+    try {
+      const info = await pageInfo(session)
+      const preview = { ...info, active: true, capturedAt: Date.now() }
+      if (includeScreenshot) {
+        const type = options.type === 'png' ? 'png' : 'jpeg'
+        const buffer = await session.page.screenshot({
+          fullPage: false,
+          type,
+          quality: type === 'jpeg' ? toNumber(options.quality, 55) : undefined,
+          timeout: toNumber(options.timeoutMs, 2500)
+        })
+        preview.screenshot = {
+          mimeType: type === 'jpeg' ? 'image/jpeg' : 'image/png',
+          base64: buffer.toString('base64'),
+          bytes: buffer.length
+        }
+      }
+      previews.push(preview)
+    } catch (error) {
+      previews.push({
+        sessionId: id,
+        active: false,
+        error: error?.message || String(error),
+        capturedAt: Date.now(),
+        createdAt: session?.createdAt || null,
+        lastUsedAt: session?.lastUsedAt || null
+      })
+    }
+  }
+  return previews
+}
+
 export async function browserOpen(payload = {}, guard, config = {}) {
   const session = await getSession(payload, guard, config, { create: true })
   const url = normalizeUrl(payload, guard)

@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react'
-import { Activity, Ban, ChevronLeft, ChevronRight, Clock3, RefreshCw, Search, Server, X } from 'lucide-react'
+import { Activity, Ban, ChevronLeft, ChevronRight, Clock3, Eye, Globe2, RefreshCw, Search, Server, X } from 'lucide-react'
 import { cancelarJob, jobsPorRunner, obtenerJob, runnersDisponibles } from '../servicios/api.js'
 
 const PAGE_SIZE = 15
@@ -53,6 +53,36 @@ function JsonBlock({ value }) {
 function Stat({ label, value }) {
   return <div className="runner-stat"><small>{label}</small><strong title={String(value ?? '—')}>{value ?? '—'}</strong></div>
 }
+
+function browserPreviewsDeRunner(runner) {
+  const directas = runner?.browserPreviews
+  const metricas = runner?.metrics?.browserPreviews
+  const lista = Array.isArray(directas) ? directas : Array.isArray(metricas) ? metricas : []
+  return lista.filter(Boolean)
+}
+
+function BrowserPreviewCard({ preview }) {
+  const img = preview?.screenshot?.base64
+    ? `data:${preview.screenshot.mimeType || 'image/jpeg'};base64,${preview.screenshot.base64}`
+    : ''
+  return <article className="browser-preview-card">
+    <div className="browser-preview-head">
+      <div>
+        <strong title={preview.title || preview.url || preview.sessionId}>{preview.title || 'Página sin título'}</strong>
+        <small title={preview.url || ''}><Globe2 size={12}/> {preview.url || 'about:blank'}</small>
+      </div>
+      <span className={`pill ${preview.active === false ? 'orange' : 'green'}`}>{preview.active === false ? 'Sin captura' : 'Live'}</span>
+    </div>
+    <div className="browser-preview-frame">
+      {img ? <img src={img} alt={`Preview browser ${preview.sessionId}`} /> : <div className="browser-preview-empty"><Eye size={28}/><span>{preview.error || 'Sin imagen disponible todavía'}</span></div>}
+    </div>
+    <div className="browser-preview-meta">
+      <span>Sesión: <code>{preview.sessionId || 'default'}</code></span>
+      <span>Captura: {formatoFecha(preview.capturedAt)}</span>
+    </div>
+  </article>
+}
+
 
 export function Runners() {
   const [runners, setRunners] = useState([])
@@ -121,6 +151,7 @@ export function Runners() {
   const paginaSegura = Math.min(pagina, totalPaginas)
   const visibles = filtrados.slice((paginaSegura - 1) * PAGE_SIZE, paginaSegura * PAGE_SIZE)
   const runner = runners.find((item) => item.id === runnerSeleccionado) || null
+  const browserPreviews = useMemo(() => browserPreviewsDeRunner(runner), [runner])
 
   useEffect(() => { setPagina(1) }, [busqueda])
 
@@ -190,6 +221,17 @@ export function Runners() {
         <Stat label="Jobs activos" value={Array.isArray(runner.activeJobs) ? runner.activeJobs.length : (runner.activeJobs || 0)}/>
         <Stat label="Workspace" value={runner.workspaceRoot}/>
         <Stat label="Capacidades" value={Array.isArray(runner.capabilities) ? runner.capabilities.length : 0}/>
+      </div>
+    </section>}
+
+    {runner && browserPreviews.length > 0 && <section className="card browser-previews-card">
+      <div className="runner-detail-title">
+        <div><p className="eyebrow">BROWSER PREVIEW</p><h2>Vista en vivo del navegador</h2></div>
+        <span className="pill blue"><Eye size={13}/> {browserPreviews.length} página(s)</span>
+      </div>
+      <p className="browser-preview-help">Estas capturas se actualizan con el heartbeat del runner mientras haya sesiones browser activas. Cada sesión abierta se muestra como una preview independiente.</p>
+      <div className="browser-preview-grid">
+        {browserPreviews.map((preview) => <BrowserPreviewCard key={preview.sessionId || preview.url || preview.capturedAt} preview={preview} />)}
       </div>
     </section>}
 
