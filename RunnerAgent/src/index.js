@@ -31,7 +31,8 @@ import {
   browserResize,
   browserStorage,
   browserClose,
-  listBrowserPreviews
+  listBrowserPreviews,
+  withBrowserSessionLock
 } from './browser.js'
 
 const config = getConfig()
@@ -178,7 +179,7 @@ function jobError(job, message, error) {
 }
 
 async function runnerPayload(status = 'online') {
-  const browserPreviews = await listBrowserPreviews({ includeScreenshot: true })
+  const browserPreviews = await listBrowserPreviews({ includeScreenshot: false })
   return {
     runnerId: config.runnerId,
     status,
@@ -329,51 +330,51 @@ async function executeJob(job) {
         break
       }
       case 'browser.open':
-        result = await browserOpen(payload, guard, config)
+        result = await withBrowserSessionLock(payload, () => browserOpen(payload, guard, config))
         await update(job, { status: 'success', result, summary: `Browser abierto: ${result.url}`, truncated: false })
         break
       case 'browser.click':
-        result = await browserClick(payload, guard, config)
+        result = await withBrowserSessionLock(payload, () => browserClick(payload, guard, config))
         await update(job, { status: 'success', result, summary: 'Click ejecutado en browser', truncated: false })
         break
       case 'browser.type':
-        result = await browserType(payload, guard, config)
+        result = await withBrowserSessionLock(payload, () => browserType(payload, guard, config))
         await update(job, { status: 'success', result, summary: 'Texto escrito en browser', truncated: false })
         break
       case 'browser.drag':
-        result = await browserDrag(payload, guard, config)
+        result = await withBrowserSessionLock(payload, () => browserDrag(payload, guard, config))
         await update(job, { status: 'success', result, summary: 'Drag ejecutado en browser', truncated: false })
         break
       case 'browser.screenshot':
-        result = await browserScreenshot(payload, guard, config)
+        result = await withBrowserSessionLock(payload, () => browserScreenshot(payload, guard, config))
         await update(job, { status: 'success', result, summary: 'Captura tomada en browser', truncated: false })
         break
       case 'browser.eval':
-        result = await browserEval(payload, guard, config)
+        result = await withBrowserSessionLock(payload, () => browserEval(payload, guard, config))
         await update(job, { status: 'success', result, summary: 'Evaluación ejecutada en browser', truncated: false })
         break
       case 'browser.inspect':
-        result = await browserInspect(payload, guard, config)
+        result = await withBrowserSessionLock(payload, () => browserInspect(payload, guard, config))
         await update(job, { status: 'success', result, summary: `Inspección browser: ${result.snapshot?.elements?.length || 0} elemento(s)`, truncated: false })
         break
       case 'browser.fill':
-        result = await browserFill(payload, guard, config)
+        result = await withBrowserSessionLock(payload, () => browserFill(payload, guard, config))
         await update(job, { status: 'success', result, summary: `Formulario rellenado: ${result.fields?.filter((x) => x.ok).length || 0}/${result.fields?.length || 0}`, truncated: false })
         break
       case 'browser.submit':
-        result = await browserSubmit(payload, guard, config)
+        result = await withBrowserSessionLock(payload, () => browserSubmit(payload, guard, config))
         await update(job, { status: 'success', result, summary: `Submit ejecutado en browser: ${result.url}`, truncated: false })
         break
       case 'browser.resize':
-        result = await browserResize(payload, guard, config)
+        result = await withBrowserSessionLock(payload, () => browserResize(payload, guard, config))
         await update(job, { status: 'success', result, summary: `Viewport browser: ${result.viewport?.width}x${result.viewport?.height}`, truncated: false })
         break
       case 'browser.storage':
-        result = await browserStorage(payload, guard, config)
+        result = await withBrowserSessionLock(payload, () => browserStorage(payload, guard, config))
         await update(job, { status: 'success', result, summary: 'Storage browser inspeccionado', truncated: false })
         break
       case 'browser.close':
-        result = await browserClose(payload, guard, config)
+        result = await withBrowserSessionLock(payload, () => browserClose(payload, guard, config))
         await update(job, { status: 'success', result, summary: 'Sesión browser cerrada', truncated: false })
         break
       default:

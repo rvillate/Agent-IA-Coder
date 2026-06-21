@@ -34,19 +34,36 @@ function localBrowserCommands() {
     endpoint: '/browser-commands',
     public: true,
     requiresKeyToExecute: true,
-    purpose: 'Documenta comandos browser disponibles en runners. La documentación es pública; la ejecución real requiere autenticación del API o credenciales del gateway.',
+    purpose: 'Documenta comandos browser disponibles en runners. La documentación es pública; la ejecución real requiere autenticación del API o credenciales del gateway. Los comandos browser se serializan por sessionId para evitar carreras entre acciones simultáneas.',
+    notes: [
+      'Las expectativas expectText/expectUrl/expectNavigation/waitForNetworkIdle se devuelven en result.navigation.expectations y ya no convierten el job en error si la acción principal sí se ejecutó.',
+      'Si una expectativa falla, browser.click devuelve snapshot accesible de la página final para depuración.',
+      'browser.submit rellena fields antes del click, pero aplica expectText/expectUrl después del submit.',
+      'Los heartbeats/listRunners envían previews browser livianas sin screenshot base64; usa browser.screenshot para capturas completas.'
+    ],
+    commonPayload: {
+      sessionId: 'default',
+      timeoutMs: 30000,
+      waitMs: 0,
+      expectText: 'Texto visible esperado',
+      expectUrl: '**/dashboard',
+      expectNavigation: true,
+      waitForNetworkIdle: false,
+      inspect: false,
+      maxItems: 80
+    },
     commands: [
-      { type: 'browser.open', description: 'Abre una página en un navegador del runner.', payload: { url: 'https://example.com' } },
-      { type: 'browser.click', description: 'Hace click en un selector o coordenada.', payload: { selector: 'button[type=submit]' } },
-      { type: 'browser.type', description: 'Escribe texto en un campo.', payload: { selector: 'input[name=q]', text: 'consulta' } },
+      { type: 'browser.open', description: 'Abre una página en un navegador del runner. Reutiliza sessionId si existe y actualiza viewport si width/height vienen en payload.', payload: { sessionId: 'main', url: 'https://example.com', width: 1280, height: 720, waitUntil: 'domcontentloaded' } },
+      { type: 'browser.click', description: 'Hace click por selector, text, role/name, label, testId o coordenadas. Devuelve navigation con expectations; si una expectativa falla agrega snapshot sin marcar error el job.', payload: { sessionId: 'main', text: 'Entrar', expectNavigation: true, expectText: 'Dashboard', inspect: true } },
+      { type: 'browser.type', description: 'Escribe o reemplaza texto por selector, label, placeholder, name, role o testId y verifica el valor.', payload: { sessionId: 'main', label: 'Email', text: 'demo@example.com' } },
       { type: 'browser.drag', description: 'Arrastra de un punto/selector a otro.', payload: { from: { x: 10, y: 10 }, to: { x: 200, y: 200 } } },
-      { type: 'browser.screenshot', description: 'Captura pantalla del navegador.', payload: { fullPage: true } },
+      { type: 'browser.screenshot', description: 'Captura pantalla del navegador. Usa includeBase64 o path para guardar dentro del workspace.', payload: { sessionId: 'main', fullPage: true, includeBase64: false, path: 'screenshots/page.png' } },
       { type: 'browser.eval', description: 'Ejecuta JavaScript en la página abierta.', payload: { script: 'document.title' } },
       { type: 'browser.inspect', description: 'Devuelve un snapshot accesible de la página: formularios, campos, botones, links, headings, alertas y selectores candidatos.', payload: { maxItems: 80, includeStorage: false } },
-      { type: 'browser.fill', description: 'Rellena varios campos con Playwright y verifica valores para apps SPA/React.', payload: { fields: [{ label: 'Email', value: 'demo@example.com' }, { label: 'Contraseña', value: 'secret' }] } },
-      { type: 'browser.submit', description: 'Rellena opcionalmente campos y envía/clickea un botón esperando navegación, red, texto o URL.', payload: { fields: [], text: 'Entrar', expectNavigation: true, waitForNetworkIdle: true } },
+      { type: 'browser.fill', description: 'Rellena varios campos con Playwright y verifica valores para apps SPA/React. Úsalo antes de click cuando quieras control manual.', payload: { sessionId: 'main', fields: [{ label: 'Email', value: 'demo@example.com' }, { label: 'Contraseña', value: 'secret' }] } },
+      { type: 'browser.submit', description: 'Rellena opcionalmente fields y luego clickea/envía. Las expectativas se evalúan después del click y se reportan en navigation.expectations.', payload: { sessionId: 'main', fields: [{ label: 'Email', value: 'demo@example.com' }, { label: 'Contraseña', value: 'secret' }], text: 'Entrar', expectNavigation: true, expectText: 'Dashboard', waitForNetworkIdle: true } },
       { type: 'browser.resize', description: 'Cambia el viewport de una sesión existente.', payload: { width: 1365, height: 768 } },
-      { type: 'browser.storage', description: 'Lista cookies y claves local/sessionStorage con valores sensibles redactados.', payload: { includeValues: false } },
+      { type: 'browser.storage', description: 'Lista cookies y claves local/sessionStorage con valores sensibles redactados. Está serializado por sessionId para no leer durante una navegación concurrente.', payload: { sessionId: 'main', includeValues: false } },
       { type: 'browser.close', description: 'Cierra el navegador del runner.', payload: {} }
     ]
   }
@@ -94,9 +111,10 @@ function localOpenApi(req) {
     info: {
       title: 'ControlAgent Server-Agent',
       version: '0.1.0',
-      description: 'API central para crear jobs de desarrollo local y consultar runners remotos conectados.'
+      description: 'API central para crear jobs de desarrollo local y consultar runners remotos conectados. Consulta /browser-commands para payloads y comportamiento de navegación browser.'
     },
     servers: [{ url: publicBaseUrl(req) }],
+    'x-browserCommands': localBrowserCommands(),
     components: {
       securitySchemes: {
         AgentApiKey: { type: 'apiKey', in: 'header', name: 'x-agent-key' }
@@ -123,7 +141,7 @@ function localOpenApi(req) {
           type: 'object',
           properties: {
             id: { type: 'string' }, type: { type: 'string' }, status: { type: 'string' }, runnerTarget: { type: 'string' },
-            claimedBy: { type: ['string', 'null'] }, exitCode: { type: ['integer', 'null'] }, summary: { type: ['string', 'null'] },
+            claimedBy: { type: ['string', 'null'] }, exitCode: { type: ['integer', 'null'] }, transferSizeBytes: { type: 'integer', description: 'Tamaño aproximado transferido por payload/result/stdout/stderr/resumen/error.' }, summary: { type: ['string', 'null'] },
             error: { type: ['string', 'null'] }, stdoutTail: { type: 'string' }, stderrTail: { type: 'string' },
             result: { anyOf: [{ type: 'object', properties: {}, additionalProperties: true }, { type: 'null' }] },
             payload: { anyOf: [{ type: 'object', properties: {}, additionalProperties: true }, { type: 'null' }] },

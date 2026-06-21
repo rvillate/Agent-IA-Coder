@@ -3,10 +3,27 @@ import path from 'node:path'
 import { pathToFileURL } from 'node:url'
 
 const sessions = new Map()
+const sessionLocks = new Map()
 
 function sessionIdFrom(payload = {}) {
   return String(payload.sessionId || 'default').replace(/[^a-zA-Z0-9_.-]/g, '_').slice(0, 80) || 'default'
 }
+
+export async function withBrowserSessionLock(payload = {}, task) {
+  const key = sessionIdFrom(payload)
+  const previous = sessionLocks.get(key) || Promise.resolve()
+  let release
+  const current = previous.catch(() => {}).then(() => new Promise((resolve) => { release = resolve }))
+  sessionLocks.set(key, current)
+  await previous.catch(() => {})
+  try {
+    return await task()
+  } finally {
+    if (typeof release === 'function') release()
+    if (sessionLocks.get(key) === current) sessionLocks.delete(key)
+  }
+}
+
 
 function toNumber(value, fallback) {
   const parsed = Number(value)
@@ -158,20 +175,34 @@ async function applyViewportIfRequested(session, payload) {
 async function waitForNavigationOrIdle(page, payload, previousUrl = null) {
   const timeout = toNumber(payload.timeoutMs, 30000)
   const waitUntil = payload.waitUntil || 'domcontentloaded'
+  const expectations = []
+  const record = async (name, fn) => {
+    try {
+      await fn()
+      expectations.push({ name, ok: true })
+    } catch (error) {
+      expectations.push({ name, ok: false, error: error?.message || String(error) })
+    }
+  }
   const expectsNavigation = payload.expectNavigation || payload.expectUrl || payload.waitForUrl
   if (expectsNavigation) {
     if (payload.expectUrl || payload.waitForUrl) {
-      await page.waitForURL(String(payload.expectUrl || payload.waitForUrl), { timeout, waitUntil }).catch(() => {})
+      await record('expectUrl', () => page.waitForURL(String(payload.expectUrl || payload.waitForUrl), { timeout, waitUntil }))
     } else {
-      await page.waitForLoadState(waitUntil, { timeout }).catch(() => {})
+      await record('expectNavigation', () => page.waitForLoadState(waitUntil, { timeout }))
     }
   }
-  if (payload.waitForNetworkIdle) await page.waitForLoadState('networkidle', { timeout }).catch(() => {})
+  if (payload.waitForNetworkIdle) await record('waitForNetworkIdle', () => page.waitForLoadState('networkidle', { timeout }))
   await waitAfter(page, payload)
   if (payload.expectText) {
-    await page.getByText(String(payload.expectText), { exact: false }).first().waitFor({ timeout })
+    await record('expectText', () => page.getByText(String(payload.expectText), { exact: false }).first().waitFor({ timeout }))
   }
-  return { previousUrl, urlChanged: previousUrl ? page.url() !== previousUrl : false }
+  return {
+    previousUrl,
+    urlChanged: previousUrl ? page.url() !== previousUrl : false,
+    expectations,
+    ok: expectations.every((item) => item.ok)
+  }
 }
 
 function firstDefined(...values) {
@@ -399,7 +430,8 @@ export async function browserClick(payload = {}, guard, config = {}) {
     throw browserActionError('browser.click', error, { selector: payload.selector || payload.text || payload.role || '', url: before })
   }
   const navigation = await waitForNavigationOrIdle(session.page, payload, before)
-  return { ...(await pageInfo(session)), navigation, screenshot: await captureIfRequested(session.page, payload, guard) }
+  const snapshot = (payload.inspect === true || navigation.ok === false) ? await pageSnapshot(session.page, { maxItems: payload.maxItems || 60 }) : undefined
+  return { ...(await pageInfo(session)), navigation, snapshot, screenshot: await captureIfRequested(session.page, payload, guard) }
 }
 
 export async function browserType(payload = {}, guard, config = {}) {
@@ -456,7 +488,18 @@ export async function browserFill(payload = {}, guard, config = {}) {
 
 export async function browserSubmit(payload = {}, guard, config = {}) {
   const session = await getSession(payload, guard, config)
-  if (Array.isArray(payload.fields) && payload.fields.length) await browserFill({ ...payload, waitMs: 0, includeBase64: false, path: null, screenshotPath: null }, guard, config)
+  if (Array.isArray(payload.fields) && payload.fields.length) {
+    await browserFill({
+      sessionId: payload.sessionId,
+      fields: payload.fields,
+      timeoutMs: payload.timeoutMs,
+      continueOnError: payload.continueOnError,
+      waitMs: 0,
+      includeBase64: false,
+      path: null,
+      screenshotPath: null
+    }, guard, config)
+  }
   const before = session.page.url()
   const timeout = toNumber(payload.timeoutMs, 30000)
   try {
