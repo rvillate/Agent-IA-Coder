@@ -141,3 +141,26 @@ button:disabled{opacity:.5;cursor:not-allowed;transform:none!important}
 
 /* Runners: refresh no bloqueante y paginación jobs */
 .runner-card{position:relative!important;overflow:hidden}.runner-card-loading{position:absolute;right:7px;top:7px;display:inline-flex;align-items:center;gap:4px;padding:3px 6px;border-radius:999px;background:#eff6ff;border:1px solid #bfdbfe;color:#1d4ed8;font-size:10px;font-weight:950;line-height:1}.runner-card-loading svg,.inline-refresh svg{animation:saSpin .8s linear infinite}.inline-refresh{display:inline-flex;align-items:center;gap:5px;color:#2563eb;font-weight:950}.runner-jobs-controls{display:flex;align-items:center;gap:9px;flex-wrap:wrap}.runner-jobs-controls label{display:inline-flex;align-items:center;gap:6px;color:var(--muted);font-size:12px;font-weight:950}.runner-jobs-controls select{height:30px!important;margin:0!important;padding:4px 24px 4px 8px!important;border-radius:9px!important;border:1px solid var(--line);background:#fff;font-size:12px!important;font-weight:900}.jobs-pagination{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;margin-top:10px;color:var(--muted);font-size:12px;font-weight:900}.jobs-pagination>div{display:flex;align-items:center;gap:8px;flex-wrap:wrap}.jobs-pagination button{height:30px!important;padding:5px 9px!important}.jobs-pagination strong{color:var(--muted);font-size:12px}
+
+/* Runners Jobs: columnas en una sola línea y ancho por contenido */
+.runner-jobs-table{
+  width:max-content!important;
+  min-width:100%!important;
+  table-layout:auto!important;
+}
+.runner-jobs-table th,
+.runner-jobs-table td{
+  white-space:nowrap!important;
+  width:auto!important;
+  max-width:none!important;
+}
+.runner-jobs-table .job-summary{
+  max-width:none!important;
+  white-space:nowrap!important;
+  overflow:visible!important;
+  text-overflow:clip!important;
+}
+.runner-jobs-table td:last-child,
+.runner-jobs-table th:last-child{
+  white-space:nowrap!important;
+}
