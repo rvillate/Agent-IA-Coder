@@ -2,6 +2,8 @@ import express from 'express'
 import { authUsuario, authRunner } from '../middleware/auth.js'
 import { env } from '../config/env.js'
 import { listarRunners, registrarOActualizarRunner } from '../servicios/runnersServicio.js'
+import { crearJob, obtenerJob } from '../servicios/jobsServicio.js'
+import { consulta } from '../db/pool.js'
 
 export const runnersRouter = express.Router()
 
@@ -59,6 +61,57 @@ async function listarRunnersDisponibles(gatewayId) {
     return ao - bo || a.id.localeCompare(b.id)
   })
 }
+
+
+function sleep(ms){ return new Promise((resolve)=>setTimeout(resolve, ms)) }
+
+runnersRouter.get('/:runnerId/browser-previews/:sessionId/screenshot', authUsuario, async (req, res, next) => {
+  const runnerId = String(req.params.runnerId || '').trim()
+  const sessionId = String(req.params.sessionId || 'default').trim()
+  let job = null
+  try {
+    const runners = await listarRunnersDisponibles(req.cuenta.gateway_id)
+    const runner = runners.find((item) => item.id === runnerId)
+    if (!runner) return res.status(404).json({ ok: false, error: 'Runner no encontrado' })
+    const preview = (runner.browserPreviews || runner.metrics?.browserPreviews || []).find((item) => String(item.sessionId || 'default') === sessionId)
+    if (!preview) return res.status(404).json({ ok: false, error: 'Sesión browser no encontrada' })
+    job = await crearJob({
+      type: 'browser.screenshot',
+      runnerTarget: runnerId,
+      payload: {
+        sessionId,
+        fullPage: false,
+        type: 'jpeg',
+        quality: 55,
+        includeBase64: true,
+        waitMs: 0,
+        timeoutMs: 5000
+      },
+      priority: 5,
+      note: 'Preview browser en vivo para pantalla Runners'
+    }, req.cuenta.gateway_id)
+    const deadline = Date.now() + 8000
+    let actual = job
+    while (Date.now() < deadline) {
+      actual = await obtenerJob(req.cuenta.gateway_id, job.id)
+      if (['success','error','timeout','cancelled','rejected'].includes(actual?.status)) break
+      await sleep(250)
+    }
+    if (actual?.status !== 'success') return res.status(202).json({ ok: false, pending: true, status: actual?.status || 'queued' })
+    const screenshot = actual?.result?.screenshot || actual?.result?.image || actual?.result
+    const base64 = screenshot?.base64 || actual?.result?.base64
+    const mimeType = screenshot?.mimeType || actual?.result?.mimeType || 'image/jpeg'
+    if (!base64) return res.status(204).end()
+    const buffer = Buffer.from(base64, 'base64')
+    res.setHeader('content-type', mimeType)
+    res.setHeader('cache-control', 'no-store, max-age=0')
+    res.setHeader('x-browser-session-id', sessionId)
+    res.end(buffer)
+  } catch (e) { next(e) }
+  finally {
+    if (job?.id) consulta('DELETE FROM aplicacion.jobs WHERE gateway_id=$1 AND id=$2', [req.cuenta.gateway_id, job.id]).catch(()=>{})
+  }
+})
 
 runnersRouter.get('/', authUsuario, async (req, res, next) => {
   try {

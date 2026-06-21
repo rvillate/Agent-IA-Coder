@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react'
 import { Activity, Ban, ChevronLeft, ChevronRight, Clock3, Eye, Globe2, RefreshCw, Search, Server, X } from 'lucide-react'
-import { cancelarJob, jobsPorRunner, obtenerJob, runnersDisponibles } from '../servicios/api.js'
+import { cancelarJob, jobsPorRunner, obtenerJob, runnersDisponibles, token, apiKey } from '../servicios/api.js'
 
 const PAGE_SIZE = 15
 const JOBS_PAGE_SIZE_DEFAULT = 15
@@ -78,10 +78,47 @@ function browserPreviewsDeRunner(runner) {
   return lista.filter(Boolean)
 }
 
-function BrowserPreviewCard({ preview }) {
-  const img = preview?.screenshot?.base64
-    ? `data:${preview.screenshot.mimeType || 'image/jpeg'};base64,${preview.screenshot.base64}`
-    : ''
+function BrowserPreviewCard({ preview, runnerId }) {
+  const [img, setImg] = useState(preview?.screenshot?.base64 ? `data:${preview.screenshot.mimeType || 'image/jpeg'};base64,${preview.screenshot.base64}` : '')
+  const [capturaAt, setCapturaAt] = useState(preview?.capturedAt || null)
+  const [errorImagen, setErrorImagen] = useState('')
+  const sessionId = preview?.sessionId || 'default'
+
+  useEffect(() => {
+    let cancelado = false
+    let objectUrl = ''
+    async function cargarImagen() {
+      if (!runnerId || !sessionId) return
+      try {
+        const headers = {}
+        const t = token()
+        const k = apiKey()
+        if (t) headers.authorization = `Bearer ${t}`
+        if (k) headers['x-agent-key'] = k
+        const res = await fetch(`/api/runners/${encodeURIComponent(runnerId)}/browser-previews/${encodeURIComponent(sessionId)}/screenshot?t=${Date.now()}`, { headers, cache: 'no-store' })
+        if (cancelado) return
+        if (res.status === 202 || res.status === 204) return
+        if (!res.ok) throw new Error(`HTTP ${res.status}`)
+        const blob = await res.blob()
+        if (!blob.size) return
+        if (objectUrl) URL.revokeObjectURL(objectUrl)
+        objectUrl = URL.createObjectURL(blob)
+        setImg(objectUrl)
+        setCapturaAt(Date.now())
+        setErrorImagen('')
+      } catch (e) {
+        if (!cancelado) setErrorImagen('No se pudo actualizar la imagen')
+      }
+    }
+    cargarImagen()
+    const timer = setInterval(cargarImagen, 2000)
+    return () => {
+      cancelado = true
+      clearInterval(timer)
+      if (objectUrl) URL.revokeObjectURL(objectUrl)
+    }
+  }, [runnerId, sessionId])
+
   return <article className="browser-preview-card">
     <div className="browser-preview-head">
       <div>
@@ -91,11 +128,11 @@ function BrowserPreviewCard({ preview }) {
       <span className={`pill ${preview.active === false ? 'orange' : 'green'}`}>{preview.active === false ? 'Sin captura' : 'Live'}</span>
     </div>
     <div className="browser-preview-frame">
-      {img ? <img src={img} alt={`Preview browser ${preview.sessionId}`} /> : <div className="browser-preview-empty"><Eye size={28}/><span>{preview.error || 'Sin imagen disponible todavía'}</span></div>}
+      {img ? <img src={img} alt={`Preview browser ${sessionId}`} /> : <div className="browser-preview-empty"><Eye size={28}/><span>{errorImagen || preview.error || 'Cargando imagen en vivo...'}</span></div>}
     </div>
     <div className="browser-preview-meta">
-      <span>Sesión: <code>{preview.sessionId || 'default'}</code></span>
-      <span>Captura: {formatoFecha(preview.capturedAt)}</span>
+      <span>Sesión: <code>{sessionId}</code></span>
+      <span>Captura: {formatoFecha(capturaAt || preview.capturedAt)}</span>
     </div>
   </article>
 }
@@ -255,7 +292,7 @@ export function Runners() {
       </div>
       <p className="browser-preview-help">Estas capturas se actualizan con el heartbeat del runner mientras haya sesiones browser activas. Cada sesión abierta se muestra como una preview independiente.</p>
       <div className="browser-preview-grid">
-        {browserPreviews.map((preview) => <BrowserPreviewCard key={preview.sessionId || preview.url || preview.capturedAt} preview={preview} />)}
+        {browserPreviews.map((preview) => <BrowserPreviewCard key={preview.sessionId || preview.url || preview.capturedAt} preview={preview} runnerId={runner.id} />)}
       </div>
     </section>}
 
