@@ -63,7 +63,7 @@ export const login = (payload) => api('/auth/login', { method: 'POST', body: JSO
 export const perfil = () => api('/auth/perfil')
 export const health = () => api('/health')
 export const runners = () => api('/runners')
-export const runnersDisponibles = () => api('/runners/disponibles')
+export const runnersDisponibles = (options = {}) => api('/runners/disponibles', options)
 export const jobs = () => api('/jobs?limit=30')
 export const jobsPorRunner = (runnerId, limit = 80) => api(`/jobs?limit=${encodeURIComponent(limit)}&runnerTarget=${encodeURIComponent(runnerId)}`, { silentLoading: true })
 export const obtenerJob = (id) => api(`/jobs/${encodeURIComponent(id)}`, { silentLoading: true })

@@ -3,6 +3,8 @@ import { Activity, Ban, ChevronLeft, ChevronRight, Clock3, Eye, Globe2, RefreshC
 import { cancelarJob, jobsPorRunner, obtenerJob, runnersDisponibles } from '../servicios/api.js'
 
 const PAGE_SIZE = 15
+const JOBS_PAGE_SIZE_DEFAULT = 15
+const JOBS_PAGE_SIZE_OPTIONS = [15, 30, 50, 100]
 const TERMINALES = new Set(['success', 'error', 'timeout', 'cancelled', 'rejected'])
 
 function estadoClase(estado = '') {
@@ -90,6 +92,8 @@ export function Runners() {
   const [pagina, setPagina] = useState(1)
   const [runnerSeleccionado, setRunnerSeleccionado] = useState('')
   const [jobs, setJobs] = useState([])
+  const [jobsPagina, setJobsPagina] = useState(1)
+  const [jobsPageSize, setJobsPageSize] = useState(JOBS_PAGE_SIZE_DEFAULT)
   const [jobDetalle, setJobDetalle] = useState(null)
   const [cargando, setCargando] = useState(false)
   const [cargandoJobs, setCargandoJobs] = useState(false)
@@ -99,7 +103,7 @@ export function Runners() {
   async function cargarRunners(silencioso = false) {
     if (!silencioso) setCargando(true)
     try {
-      const data = await runnersDisponibles()
+      const data = await runnersDisponibles({ silentLoading: true })
       const lista = normalizarRunners(data.items || [])
       setRunners(lista)
       setError('')
@@ -116,7 +120,7 @@ export function Runners() {
     if (!runnerId) return
     setCargandoJobs(true)
     try {
-      const data = await jobsPorRunner(runnerId, 80)
+      const data = await jobsPorRunner(runnerId, 200)
       setJobs(data.items || [])
       setActualizado(Date.now())
       if (jobDetalle?.id) {
@@ -151,9 +155,13 @@ export function Runners() {
   const paginaSegura = Math.min(pagina, totalPaginas)
   const visibles = filtrados.slice((paginaSegura - 1) * PAGE_SIZE, paginaSegura * PAGE_SIZE)
   const runner = runners.find((item) => item.id === runnerSeleccionado) || null
+  const totalJobsPaginas = Math.max(1, Math.ceil(jobs.length / jobsPageSize))
+  const jobsPaginaSegura = Math.min(jobsPagina, totalJobsPaginas)
+  const jobsVisibles = jobs.slice((jobsPaginaSegura - 1) * jobsPageSize, jobsPaginaSegura * jobsPageSize)
   const browserPreviews = useMemo(() => browserPreviewsDeRunner(runner), [runner])
 
   useEffect(() => { setPagina(1) }, [busqueda])
+  useEffect(() => { setJobsPagina(1) }, [runnerSeleccionado, jobsPageSize])
 
   async function abrirJob(job) {
     try {
@@ -192,9 +200,10 @@ export function Runners() {
     {error && <div className="card alerta runners-error">{error}</div>}
 
     <section className="card runners-card-wrap">
-      <div className="runners-meta"><span>{filtrados.length} runner(s)</span><span>Última actualización: {formatoFecha(actualizado)}</span>{cargando && <span>Cargando...</span>}</div>
+      <div className="runners-meta"><span>{filtrados.length} runner(s)</span><span>Última actualización: {formatoFecha(actualizado)}</span>{cargando && <span className="inline-refresh"><RefreshCw size={12}/> Actualizando</span>}</div>
       <div className="runner-card-grid">
         {visibles.map((item) => <button key={item.id} className={`runner-card ${item.id === runnerSeleccionado ? 'selected' : ''}`} onClick={() => { setRunnerSeleccionado(item.id); setJobDetalle(null); localStorage.setItem('sa_runner', item.id) }}>
+          {item.id === runnerSeleccionado && (cargando || cargandoJobs) && <span className="runner-card-loading"><RefreshCw size={11}/> Live</span>}
           <strong title={item.id}>{item.id}</strong>
           <span className={`pill ${estadoClase(item.status)}`}>{item.status === 'online' ? 'Online' : item.status || 'Offline'}</span>
         </button>)}
@@ -238,13 +247,17 @@ export function Runners() {
     {runner && <section className="card runner-jobs-card">
       <div className="runner-detail-title">
         <div><p className="eyebrow">JOBS EN TIEMPO REAL</p><h2>Jobs de {runner.id}</h2></div>
-        <span className="pill blue"><Activity size={13}/> Actualiza cada 2s</span>
+        <div className="runner-jobs-controls">
+          {(cargandoJobs || cargando) && <span className="inline-refresh"><RefreshCw size={12}/> Actualizando</span>}
+          <label>Mostrar <select value={jobsPageSize} onChange={(e) => setJobsPageSize(Number(e.target.value))}>{JOBS_PAGE_SIZE_OPTIONS.map((n) => <option key={n} value={n}>{n}</option>)}</select></label>
+          <span className="pill blue"><Activity size={13}/> Actualiza cada 2s</span>
+        </div>
       </div>
       <div className="runner-jobs-table-wrap">
         <table className="runner-jobs-table">
           <thead><tr><th>Fecha</th><th>ID</th><th>Tipo</th><th>Estado</th><th>Tiempo ejecución</th><th>Exit</th><th>Resumen</th><th>Acciones</th></tr></thead>
           <tbody>
-            {jobs.map((job) => <tr key={job.id} className={jobDetalle?.id === job.id ? 'selected-row' : ''} onClick={() => abrirJob(job)}>
+            {jobsVisibles.map((job) => <tr key={job.id} className={jobDetalle?.id === job.id ? 'selected-row' : ''} onClick={() => abrirJob(job)}>
               <td>{formatoFecha(job.createdAt)}</td>
               <td><code>{job.id}</code></td>
               <td>{job.type}</td>
@@ -254,9 +267,17 @@ export function Runners() {
               <td className="job-summary" title={job.summary || job.error || ''}>{job.summary || job.error || job.note || '—'}</td>
               <td><button className="danger-inline" disabled={TERMINALES.has(job.status)} onClick={(e) => { e.stopPropagation(); cancelar(job.id) }}><Ban size={13}/> Cancelar</button></td>
             </tr>)}
-            {!jobs.length && <tr><td colSpan="8" className="table-empty">{cargandoJobs ? 'Cargando jobs...' : 'Sin jobs para este runner'}</td></tr>}
+            {!jobs.length && <tr><td colSpan="8" className="table-empty">{cargandoJobs ? 'Actualizando jobs...' : 'Sin jobs para este runner'}</td></tr>}
           </tbody>
         </table>
+      </div>
+      <div className="jobs-pagination">
+        <span>Mostrando {jobs.length ? ((jobsPaginaSegura - 1) * jobsPageSize) + 1 : 0}-{Math.min(jobsPaginaSegura * jobsPageSize, jobs.length)} de {jobs.length}</span>
+        <div>
+          <button disabled={jobsPaginaSegura <= 1} onClick={() => setJobsPagina((p) => Math.max(1, p - 1))}><ChevronLeft size={15}/> Anterior</button>
+          <strong>Página {jobsPaginaSegura} de {totalJobsPaginas}</strong>
+          <button disabled={jobsPaginaSegura >= totalJobsPaginas} onClick={() => setJobsPagina((p) => Math.min(totalJobsPaginas, p + 1))}>Siguiente <ChevronRight size={15}/></button>
+        </div>
       </div>
     </section>}
 
