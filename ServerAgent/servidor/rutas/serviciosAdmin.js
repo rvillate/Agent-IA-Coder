@@ -249,8 +249,21 @@ function unitPorFormulario(body) {
   return { name, text: `[Unit]\nDescription=${descripcion}\nAfter=network.target\n\n[Service]\nType=simple\nWorkingDirectory=${workingDirectory}\nExecStart=${comando}\nRestart=always\nRestartSec=5\n\n[Install]\nWantedBy=multi-user.target\n` }
 }
 
+async function serviciosListables() {
+  const todos = await leerConfigTodos()
+  const names = new Set(serviciosBase)
+  for (const service of Object.keys(todos || {})) {
+    try { names.add(validarNombreServicio(service)) } catch {}
+  }
+  return [...names]
+}
+
 serviciosAdminRouter.get('/', authUsuario, async (req, res, next) => {
-  try { const items = []; for (const service of serviciosBase) items.push(await infoServicio(service)); res.json({ ok: true, host: os.hostname(), items, total: items.length }) } catch (error) { next(error) }
+  try {
+    const items = []
+    for (const service of await serviciosListables()) items.push(await infoServicio(service))
+    res.json({ ok: true, host: os.hostname(), items, total: items.length })
+  } catch (error) { next(error) }
 })
 serviciosAdminRouter.get('/config', authUsuario, async (req, res, next) => {
   try { const service = validarNombreServicio(req.query.service); res.json({ ok: true, service: await infoServicio(service), config: await configServicio(service, await valorSystemctl(['is-enabled', service], 'disabled')) }) } catch (error) { next(error) }
