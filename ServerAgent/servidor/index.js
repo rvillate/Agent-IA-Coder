@@ -4,6 +4,10 @@ import cors from 'cors'
 import helmet from 'helmet'
 import compression from 'compression'
 import path from 'node:path'
+import os from 'node:os'
+import fs from 'node:fs/promises'
+import { execFile } from 'node:child_process'
+import { promisify } from 'node:util'
 import { fileURLToPath } from 'node:url'
 import { env } from './config/env.js'
 import { consulta } from './db/pool.js'
@@ -17,6 +21,78 @@ import { authUsuario } from './middleware/auth.js'
 import { crearJob, obtenerJob } from './servicios/jobsServicio.js'
 const __filename=fileURLToPath(import.meta.url), __dirname=path.dirname(__filename), raiz=path.resolve(__dirname,'..')
 const app=express(); app.set('trust proxy',true); app.use(helmet({contentSecurityPolicy:false})); app.use(cors()); app.use(compression()); app.use(express.json({limit:env.bodyLimit}))
+
+const execFileAsync = promisify(execFile)
+let ultimaCpuStat = null
+
+async function leerCpuStat() {
+  const text = await fs.readFile('/proc/stat', 'utf8')
+  const parts = text.split(/\n/)[0].trim().split(/\s+/).slice(1).map(Number)
+  const idle = (parts[3] || 0) + (parts[4] || 0)
+  const total = parts.reduce((acc, n) => acc + (Number.isFinite(n) ? n : 0), 0)
+  return { idle, total }
+}
+
+async function usoCpuPorcentaje() {
+  const actual = await leerCpuStat().catch(() => null)
+  if (!actual) return null
+  if (!ultimaCpuStat) { ultimaCpuStat = actual; return Math.min(100, Math.round((os.loadavg()[0] / Math.max(1, os.cpus().length)) * 100)) }
+  const totalDiff = actual.total - ultimaCpuStat.total
+  const idleDiff = actual.idle - ultimaCpuStat.idle
+  ultimaCpuStat = actual
+  if (totalDiff <= 0) return 0
+  return Math.max(0, Math.min(100, Math.round((1 - idleDiff / totalDiff) * 100)))
+}
+
+async function discoPrincipal() {
+  try {
+    const { stdout } = await execFileAsync('df', ['-kP', '/'])
+    const line = stdout.trim().split(/\n/)[1]
+    const parts = line.trim().split(/\s+/)
+    const total = Number(parts[1] || 0) * 1024
+    const used = Number(parts[2] || 0) * 1024
+    const free = Number(parts[3] || 0) * 1024
+    const percent = total ? Math.round((used / total) * 100) : 0
+    return { path: '/', totalBytes: total, usedBytes: used, freeBytes: free, usedPercent: percent }
+  } catch {
+    return { path: '/', totalBytes: null, usedBytes: null, freeBytes: null, usedPercent: null }
+  }
+}
+
+function bucketIso(date) {
+  const d = new Date(date)
+  d.setSeconds(0, 0)
+  return d.toISOString()
+}
+
+async function actividadJobs(gatewayId, minutos = 60) {
+  const limit = Math.max(5, Math.min(Number(minutos || 60), 240))
+  const { rows } = await consulta(`SELECT date_trunc('minute', creado_en) AS bucket,
+      COUNT(*)::int AS jobs,
+      COALESCE(SUM(
+        octet_length(COALESCE(payload::text,''))+
+        octet_length(COALESCE(resultado::text,''))+
+        octet_length(COALESCE(stdout_tail,''))+
+        octet_length(COALESCE(stderr_tail,''))+
+        octet_length(COALESCE(resumen,''))+
+        octet_length(COALESCE(error,''))
+      ),0)::bigint AS bytes
+    FROM aplicacion.jobs
+    WHERE gateway_id=$1 AND creado_en >= now() - ($2::int * interval '1 minute')
+    GROUP BY 1
+    ORDER BY 1 ASC`, [gatewayId, limit])
+  const map = new Map(rows.map((row) => [bucketIso(row.bucket), { jobs: Number(row.jobs || 0), bytes: Number(row.bytes || 0) }]))
+  const buckets = []
+  const now = new Date(); now.setSeconds(0, 0)
+  for (let i = limit - 1; i >= 0; i -= 1) {
+    const d = new Date(now.getTime() - i * 60000)
+    const key = d.toISOString()
+    const item = map.get(key) || { jobs: 0, bytes: 0 }
+    buckets.push({ bucket: key, label: d.toLocaleTimeString('es-CO', { hour: '2-digit', minute: '2-digit', hour12: false }), jobs: item.jobs, bytes: item.bytes })
+  }
+  return buckets
+}
+
 async function responderHealth(req, res, next) {
   try {
     const db = await consulta('SELECT now() as ahora')
@@ -26,6 +102,33 @@ async function responderHealth(req, res, next) {
 
 app.get('/api/health', responderHealth)
 app.get('/health', responderHealth)
+
+app.get('/api/servidor/metricas', authUsuario, async (req, res, next) => {
+  try {
+    const memoryTotal = os.totalmem()
+    const memoryFree = os.freemem()
+    const memoryUsed = memoryTotal - memoryFree
+    const disk = await discoPrincipal()
+    res.json({
+      ok: true,
+      capturedAt: Date.now(),
+      cpu: {
+        cores: os.cpus().length,
+        loadavg: os.loadavg(),
+        usedPercent: await usoCpuPorcentaje()
+      },
+      memory: {
+        totalBytes: memoryTotal,
+        usedBytes: memoryUsed,
+        freeBytes: memoryFree,
+        usedPercent: Math.round((memoryUsed / Math.max(1, memoryTotal)) * 100)
+      },
+      disk,
+      jobsActivity: await actividadJobs(req.cuenta.gateway_id, Number(req.query.minutes || 60))
+    })
+  } catch (e) { next(e) }
+})
+
 
 function localBrowserCommands() {
   return {
