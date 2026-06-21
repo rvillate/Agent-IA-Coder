@@ -4,7 +4,6 @@ import { limitarTexto, nuevoJobId } from '../util/seguridad.js'
 import { env } from '../config/env.js'
 
 const ESTADOS_TERMINALES = ['success','error','timeout','cancelled','rejected']
-const ESTADOS_TERMINALES_SQL = "'success','error','timeout','cancelled','rejected'"
 
 export async function reconciliarJobsStale(gatewayId){
   await consulta(`UPDATE aplicacion.jobs
@@ -24,7 +23,7 @@ export async function reconciliarJobsStale(gatewayId){
     WHERE j.gateway_id=$1
       AND j.estado='running'
       AND j.iniciado_en IS NOT NULL
-      AND j.iniciado_en < now() - interval '10 minutes'
+      AND j.actualizado_en < now() - interval '2 minutes'
       AND NOT EXISTS (
         SELECT 1 FROM aplicacion.runners r
         WHERE r.gateway_id=j.gateway_id
