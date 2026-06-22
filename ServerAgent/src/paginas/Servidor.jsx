@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react'
-import { Activity, AlertTriangle, Calendar, CheckCircle2, ChevronDown, Clock3, Cpu, Database, Download, Gauge, HardDrive, Info, MemoryStick, Network, RefreshCw, Server, ShieldCheck, Terminal, Trash2, Users } from 'lucide-react'
+import { Activity, AlertTriangle, Calendar, CheckCircle2, ChevronDown, Clock3, Cpu, Database, Download, Gauge, HardDrive, Info, MemoryStick, Network, RefreshCw, Server, ShieldCheck, Terminal, Trash2, Users, X } from 'lucide-react'
 import { Area, AreaChart, Bar, CartesianGrid, ComposedChart, Line, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
 import { api } from '../servicios/api.js'
 
@@ -89,6 +89,23 @@ function JobsTooltip({ active, payload, label }) {
   return <div className="srv-tooltip"><b>{label}</b><span>Jobs: {jobs}</span><span>Bytes/min: {bytes(transfer)}</span></div>
 }
 
+
+function ServerModal({ modal, onClose }) {
+  if (!modal) return null
+  return <div className="srv-modal-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose() }}>
+    <section className="srv-modal-card" role="dialog" aria-modal="true" aria-labelledby="srv-modal-title">
+      <div className="srv-modal-head">
+        <div>
+          <h2 id="srv-modal-title">{modal.title}</h2>
+          {modal.subtitle && <p>{modal.subtitle}</p>}
+        </div>
+        <button className="srv-modal-close" type="button" onClick={onClose} aria-label="Cerrar modal"><X size={18}/></button>
+      </div>
+      {modal.content}
+    </section>
+  </div>
+}
+
 function ProcessIcon({ name }) {
   const n = String(name || '').toLowerCase()
   if (n.includes('postgres')) return <Database size={16} />
@@ -102,6 +119,7 @@ export function Servidor() {
   const [history, setHistory] = useState([])
   const [loading, setLoading] = useState(false)
   const [range, setRange] = useState('1H')
+  const [modalType, setModalType] = useState(null)
 
   async function load(silent = false) {
     if (!silent) setLoading(true)
@@ -158,6 +176,31 @@ export function Servidor() {
   ]
   const h = (key) => history.slice(-SPARK_POINTS).map((item) => ({ label: item.label, value: item[key] }))
   const activityData = (data?.jobsActivity || []).slice(-ACTIVITY_POINTS)
+  const modal = useMemo(() => {
+    if (modalType === 'processes') {
+      const rows = processes.top || []
+      return {
+        title: 'Todos los procesos principales',
+        subtitle: `${rows.length} procesos reportados en la última medición.`,
+        content: <div className="srv-modal-table-wrap"><table className="srv-modal-table"><thead><tr><th>Proceso</th><th>CPU</th><th>Memoria</th><th>Estado</th></tr></thead><tbody>{rows.length ? rows.map((p, i) => <tr key={`${p.name}-${i}`}><td><span className="srv-proc-icon">{ProcessIcon({ name: p.name })}</span>{p.name || '—'}</td><td>{Number(p.cpuPercent || 0).toFixed(1)}%</td><td>{bytes(p.memoryBytes)}</td><td><Pill type="green">Activo</Pill></td></tr>) : <tr><td colSpan="4" className="srv-empty-cell">Sin procesos para mostrar.</td></tr>}</tbody></table></div>
+      }
+    }
+    if (modalType === 'events') {
+      return {
+        title: 'Todos los eventos recientes',
+        subtitle: `${events.length} eventos reportados por el servidor.`,
+        content: <div className="srv-modal-list">{events.length ? events.map((event, i) => <div className={`srv-modal-event ${event.type}`} key={i}><span>{StatusIcon({ type: event.type })}</span><div><b>{event.title || 'Evento'}</b><small>{event.time || '—'}</small></div></div>) : <p className="srv-empty-cell">Sin eventos para mostrar.</p>}</div>
+      }
+    }
+    if (modalType === 'services') {
+      return {
+        title: 'Todos los servicios del sistema',
+        subtitle: `${services.length} servicios detectados en el servidor.`,
+        content: <div className="srv-modal-service-grid">{services.length ? services.map((service, i) => <div className="srv-modal-service" key={`${service.name}-${i}`}><span>{i % 3 === 0 ? <ShieldCheck size={16}/> : i % 3 === 1 ? <Database size={16}/> : <Terminal size={16}/>}<b>{service.name || '—'}</b></span><Pill type="green">Activo</Pill></div>) : <p className="srv-empty-cell">Sin servicios para mostrar.</p>}</div>
+      }
+    }
+    return null
+  }, [modalType, processes.top, events, services])
 
   return <div className="srv-dashboard">
     <div className="srv-header">
@@ -218,14 +261,14 @@ export function Servidor() {
       </section>
 
       <section className="srv-card srv-processes">
-        <div className="srv-section-head small"><h2>Procesos principales</h2><a>Ver todos</a></div>
-        <table><thead><tr><th>Proceso</th><th>CPU</th><th>Memoria</th><th>Estado</th></tr></thead><tbody>{(processes.top || []).map((p, i) => <tr key={`${p.name}-${i}`}><td><span className="srv-proc-icon">{ProcessIcon(p)}</span>{p.name}</td><td>{Number(p.cpuPercent || 0).toFixed(1)}%</td><td>{bytes(p.memoryBytes)}</td><td><Pill type="green">Activo</Pill></td></tr>)}</tbody></table>
+        <div className="srv-section-head small"><h2>Procesos principales</h2><button className="srv-view-all" type="button" onClick={() => setModalType('processes')}>Ver todos</button></div>
+        <table><thead><tr><th>Proceso</th><th>CPU</th><th>Memoria</th><th>Estado</th></tr></thead><tbody>{(processes.top || []).map((p, i) => <tr key={`${p.name}-${i}`}><td><span className="srv-proc-icon">{ProcessIcon({ name: p.name })}</span>{p.name}</td><td>{Number(p.cpuPercent || 0).toFixed(1)}%</td><td>{bytes(p.memoryBytes)}</td><td><Pill type="green">Activo</Pill></td></tr>)}</tbody></table>
       </section>
 
       <section className="srv-card srv-events">
-        <div className="srv-section-head small"><h2>Eventos recientes</h2><a>Ver todos</a></div>
+        <div className="srv-section-head small"><h2>Eventos recientes</h2><button className="srv-view-all" type="button" onClick={() => setModalType('events')}>Ver todos</button></div>
         <div className="srv-event-list">{events.map((event, i) => <div className={`srv-event ${event.type}`} key={i}><span>{StatusIcon({ type: event.type })}</span><b>{event.title}</b><small>{event.time}</small></div>)}</div>
-        <button className="srv-link-button">Ver todos los eventos →</button>
+        <button className="srv-link-button" type="button" onClick={() => setModalType('events')}>Ver todos los eventos →</button>
       </section>
     </div>
 
@@ -236,7 +279,7 @@ export function Servidor() {
       </section>
 
       <section className="srv-card srv-services">
-        <div className="srv-section-head small"><h2>Servicios del sistema</h2><a>Ver todos</a></div>
+        <div className="srv-section-head small"><h2>Servicios del sistema</h2><button className="srv-view-all" type="button" onClick={() => setModalType('services')}>Ver todos</button></div>
         <div className="srv-service-grid">{services.slice(0, 6).map((service, i) => <div key={service.name}><span>{i % 3 === 0 ? <ShieldCheck size={16}/> : i % 3 === 1 ? <Database size={16}/> : <Terminal size={16}/>}<b>{service.name}</b></span><Pill type="green">Activo</Pill></div>)}</div>
       </section>
 
@@ -245,5 +288,6 @@ export function Servidor() {
         <dl><dt>IP del servidor</dt><dd>{summary.ip || '—'}</dd><dt>SO</dt><dd>{summary.os || '—'}</dd><dt>Kernel</dt><dd>{summary.kernel || '—'}</dd><dt>Arquitectura</dt><dd>{summary.arch || '—'}</dd></dl>
       </section>
     </div>
+    <ServerModal modal={modal} onClose={() => setModalType(null)} />
   </div>
 }
