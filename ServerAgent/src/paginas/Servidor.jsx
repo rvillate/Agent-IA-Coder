@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react'
+import React, { useEffect, useMemo, useRef, useState } from 'react'
 import { Activity, AlertTriangle, Calendar, CheckCircle2, ChevronDown, Clock3, Cpu, Database, Download, Gauge, HardDrive, Info, MemoryStick, Network, RefreshCw, Server, ShieldCheck, Terminal, Trash2, Users, X } from 'lucide-react'
 import { Area, AreaChart, Bar, CartesianGrid, ComposedChart, Line, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
 import { api } from '../servicios/api.js'
@@ -119,13 +119,16 @@ export function Servidor() {
   const [history, setHistory] = useState([])
   const [loading, setLoading] = useState(false)
   const [range, setRange] = useState('1H')
+  const rangeRef = useRef('1H')
   const [modalType, setModalType] = useState(null)
   const [actionMenu, setActionMenu] = useState(null)
 
-  async function load(silent = false) {
+  async function load(silent = false, rangeOverride = null) {
+    const activeRange = rangeOverride || rangeRef.current || range
+    rangeRef.current = activeRange
     if (!silent) setLoading(true)
     try {
-      const minutes = RANGE_MINUTES[range] || 60
+      const minutes = RANGE_MINUTES[activeRange] || 60
       const res = await api(`/servidor/metricas?minutes=${minutes}`, { silentLoading: true })
       setData(res)
       const historial = Array.isArray(res.resourceHistory) ? res.resourceHistory : []
@@ -143,8 +146,10 @@ export function Servidor() {
   }
 
   function cambiarRango(nuevoRango) {
+    rangeRef.current = nuevoRango
     setRange(nuevoRango)
     setActionMenu(null)
+    load(false, nuevoRango)
   }
 
   function exportarServidor(formato) {
@@ -213,10 +218,10 @@ export function Servidor() {
   }
 
   useEffect(() => {
-    load()
-    const timer = setInterval(() => load(true), 5000)
+    load(false, rangeRef.current)
+    const timer = setInterval(() => load(true, rangeRef.current), 5000)
     return () => clearInterval(timer)
-  }, [range])
+  }, [])
 
   const cpu = data?.cpu || {}
   const memory = data?.memory || {}
