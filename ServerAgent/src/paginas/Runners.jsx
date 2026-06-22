@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react'
-import { Activity, Ban, ChevronLeft, ChevronRight, Clock3, Eye, Globe2, RefreshCw, Search, Server, X } from 'lucide-react'
+import { Activity, Ban, ChevronLeft, ChevronRight, Clock3, ExternalLink, Eye, Globe2, Monitor, RefreshCw, Search, Server, X } from 'lucide-react'
 import { cancelarJob, jobsPorRunner, obtenerJob, runnersDisponibles, token, apiKey } from '../servicios/api.js'
 
 const PAGE_SIZE = 15
@@ -78,11 +78,33 @@ function browserPreviewsDeRunner(runner) {
   return lista.filter(Boolean)
 }
 
-function BrowserPreviewCard({ preview, runnerId }) {
+function BrowserPreviewCard({ preview, runnerId, onDetach }) {
   const [img, setImg] = useState(preview?.screenshot?.base64 ? `data:${preview.screenshot.mimeType || 'image/jpeg'};base64,${preview.screenshot.base64}` : '')
   const [capturaAt, setCapturaAt] = useState(preview?.capturedAt || null)
   const [errorImagen, setErrorImagen] = useState('')
   const sessionId = preview?.sessionId || 'default'
+
+  function screenshotUrl() {
+    return `/api/runners/${encodeURIComponent(runnerId)}/browser-previews/${encodeURIComponent(sessionId)}/screenshot?t=${Date.now()}`
+  }
+
+  function authHeadersLiteral() {
+    const headers = {}
+    const t = token()
+    const k = apiKey()
+    if (t) headers.authorization = `Bearer ${t}`
+    if (k) headers['x-agent-key'] = k
+    return JSON.stringify(headers)
+  }
+
+  function abrirNuevaPestana() {
+    const win = window.open('', `_blank_preview_${sessionId}`)
+    if (!win) return
+    const title = preview.title || preview.url || sessionId
+    win.document.write(`<!doctype html><html><head><meta charset="utf-8"><title>${title}</title><style>body{margin:0;background:#071532;color:#dbeafe;font-family:system-ui,sans-serif}header{height:44px;display:flex;align-items:center;justify-content:space-between;gap:12px;padding:0 14px;background:#0b1738;border-bottom:1px solid rgba(255,255,255,.12)}header strong{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}header small{color:#93a4c8}main{height:calc(100vh - 44px);display:grid;place-items:center}img{max-width:100%;max-height:100%;object-fit:contain}#status{position:fixed;left:12px;bottom:10px;background:rgba(7,21,50,.8);padding:6px 9px;border-radius:999px;font-size:12px}</style></head><body><header><strong>${title}</strong><small>Actualiza cada 2s · ${sessionId}</small></header><main><img id="shot" alt="Browser preview"/></main><div id="status">Conectando...</div><script>const headers=${authHeadersLiteral()};let objectUrl='';async function tick(){try{const res=await fetch('/api/runners/${encodeURIComponent(runnerId)}/browser-previews/${encodeURIComponent(sessionId)}/screenshot?t='+Date.now(),{headers,cache:'no-store'});if(res.status===202||res.status===204)return;if(!res.ok)throw new Error('HTTP '+res.status);const blob=await res.blob();if(!blob.size)return;if(objectUrl)URL.revokeObjectURL(objectUrl);objectUrl=URL.createObjectURL(blob);document.getElementById('shot').src=objectUrl;document.getElementById('status').textContent='Actualizado '+new Date().toLocaleTimeString();}catch(e){document.getElementById('status').textContent='Error actualizando: '+e.message;}}tick();setInterval(tick,2000);window.addEventListener('beforeunload',()=>{if(objectUrl)URL.revokeObjectURL(objectUrl)});</script></body></html>`)
+    win.document.close()
+    onDetach?.()
+  }
 
   useEffect(() => {
     let cancelado = false
@@ -95,7 +117,7 @@ function BrowserPreviewCard({ preview, runnerId }) {
         const k = apiKey()
         if (t) headers.authorization = `Bearer ${t}`
         if (k) headers['x-agent-key'] = k
-        const res = await fetch(`/api/runners/${encodeURIComponent(runnerId)}/browser-previews/${encodeURIComponent(sessionId)}/screenshot?t=${Date.now()}`, { headers, cache: 'no-store' })
+        const res = await fetch(screenshotUrl(), { headers, cache: 'no-store' })
         if (cancelado) return
         if (res.status === 202 || res.status === 204) return
         if (!res.ok) throw new Error(`HTTP ${res.status}`)
@@ -125,7 +147,10 @@ function BrowserPreviewCard({ preview, runnerId }) {
         <strong title={preview.title || preview.url || preview.sessionId}>{preview.title || 'Página sin título'}</strong>
         <small title={preview.url || ''}><Globe2 size={12}/> {preview.url || 'about:blank'}</small>
       </div>
-      <span className={`pill ${preview.active === false ? 'orange' : 'green'}`}>{preview.active === false ? 'Sin captura' : 'Live'}</span>
+      <div className="browser-preview-actions">
+        <button type="button" className="browser-preview-open" onClick={abrirNuevaPestana} title="Abrir preview en nueva pestaña"><ExternalLink size={14}/></button>
+        <span className={`pill ${preview.active === false ? 'orange' : 'green'}`}>{preview.active === false ? 'Sin captura' : 'Live'}</span>
+      </div>
     </div>
     <div className="browser-preview-frame">
       {img ? <img src={img} alt={`Preview browser ${sessionId}`} /> : <div className="browser-preview-empty"><Eye size={28}/><span>{errorImagen || preview.error || 'Cargando imagen en vivo...'}</span></div>}
@@ -151,6 +176,7 @@ export function Runners() {
   const [cargandoJobs, setCargandoJobs] = useState(false)
   const [error, setError] = useState('')
   const [actualizado, setActualizado] = useState(null)
+  const [previewsVisibles, setPreviewsVisibles] = useState({})
 
   async function cargarRunners(silencioso = false) {
     if (!silencioso) setCargando(true)
@@ -211,6 +237,7 @@ export function Runners() {
   const jobsPaginaSegura = Math.min(jobsPagina, totalJobsPaginas)
   const jobsVisibles = jobs.slice((jobsPaginaSegura - 1) * jobsPageSize, jobsPaginaSegura * jobsPageSize)
   const browserPreviews = useMemo(() => browserPreviewsDeRunner(runner), [runner])
+  const previewsAbiertos = Boolean(runner?.id && previewsVisibles[runner.id])
 
   useEffect(() => { setPagina(1) }, [busqueda])
   useEffect(() => { setJobsPagina(1) }, [runnerSeleccionado, jobsPageSize])
@@ -222,6 +249,10 @@ export function Runners() {
     } catch (e) {
       setError(e.message || 'Error obteniendo job')
     }
+  }
+
+  function togglePreviewsRunner(runnerId) {
+    setPreviewsVisibles((actual) => ({ ...actual, [runnerId]: !actual[runnerId] }))
   }
 
   async function cancelar(jobId) {
@@ -254,11 +285,16 @@ export function Runners() {
     <section className="card runners-card-wrap">
       <div className="runners-meta"><span>{filtrados.length} runner(s)</span><span>Última actualización: {formatoFecha(actualizado)}</span>{cargando && <span className="inline-refresh"><RefreshCw size={12}/> Actualizando</span>}</div>
       <div className="runner-card-grid">
-        {visibles.map((item) => <button key={item.id} className={`runner-card ${item.id === runnerSeleccionado ? 'selected' : ''}`} onClick={() => { setRunnerSeleccionado(item.id); setJobDetalle(null); localStorage.setItem('sa_runner', item.id) }}>
-          {item.id === runnerSeleccionado && (cargando || cargandoJobs) && <span className="runner-card-loading"><RefreshCw size={11}/> Live</span>}
-          <strong title={item.id}>{item.id}</strong>
-          <span className={`pill ${estadoClase(item.status)}`}>{item.status === 'online' ? 'Online' : item.status || 'Offline'}</span>
-        </button>)}
+        {visibles.map((item) => {
+          const countPreviews = browserPreviewsDeRunner(item).length
+          const visiblePreview = Boolean(previewsVisibles[item.id])
+          return <button key={item.id} className={`runner-card ${item.id === runnerSeleccionado ? 'selected' : ''} ${visiblePreview ? 'preview-open' : ''}`} onClick={() => { setRunnerSeleccionado(item.id); setJobDetalle(null); localStorage.setItem('sa_runner', item.id) }}>
+            {item.id === runnerSeleccionado && (cargando || cargandoJobs) && <span className="runner-card-loading"><RefreshCw size={11}/> Live</span>}
+            {countPreviews > 0 && <span className={`runner-preview-toggle ${visiblePreview ? 'active' : ''}`} role="button" tabIndex={0} title={visiblePreview ? 'Ocultar previews' : 'Mostrar previews'} onClick={(event) => { event.stopPropagation(); setRunnerSeleccionado(item.id); togglePreviewsRunner(item.id) }} onKeyDown={(event) => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); event.stopPropagation(); setRunnerSeleccionado(item.id); togglePreviewsRunner(item.id) } }}><Monitor size={14}/></span>}
+            <strong title={item.id}>{item.id}</strong>
+            <span className={`pill ${estadoClase(item.status)}`}>{item.status === 'online' ? 'Online' : item.status || 'Offline'}</span>
+          </button>
+        })}
         {!visibles.length && <div className="runner-empty-card">No hay runners para esta búsqueda.</div>}
       </div>
       <div className="runners-pagination">
@@ -285,14 +321,14 @@ export function Runners() {
       </div>
     </section>}
 
-    {runner && browserPreviews.length > 0 && <section className="card browser-previews-card">
+    {runner && browserPreviews.length > 0 && previewsAbiertos && <section className="card browser-previews-card">
       <div className="runner-detail-title">
         <div><p className="eyebrow">BROWSER PREVIEW</p><h2>Vista en vivo del navegador</h2></div>
-        <span className="pill blue"><Eye size={13}/> {browserPreviews.length} página(s)</span>
+        <div className="actions-row"><span className="pill blue"><Eye size={13}/> {browserPreviews.length} página(s)</span><button type="button" onClick={() => togglePreviewsRunner(runner.id)}><X size={14}/> Ocultar</button></div>
       </div>
-      <p className="browser-preview-help">Estas capturas se actualizan con el heartbeat del runner mientras haya sesiones browser activas. Cada sesión abierta se muestra como una preview independiente.</p>
+      <p className="browser-preview-help">Oculto por defecto para evitar capturas extra. Al abrir en nueva pestaña, la preview se oculta aquí y sigue actualizándose en esa pestaña.</p>
       <div className="browser-preview-grid">
-        {browserPreviews.map((preview) => <BrowserPreviewCard key={preview.sessionId || preview.url || preview.capturedAt} preview={preview} runnerId={runner.id} />)}
+        {browserPreviews.map((preview) => <BrowserPreviewCard key={preview.sessionId || preview.url || preview.capturedAt} preview={preview} runnerId={runner.id} onDetach={() => setPreviewsVisibles((actual) => ({ ...actual, [runner.id]: false }))} />)}
       </div>
     </section>}
 

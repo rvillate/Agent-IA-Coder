@@ -4,6 +4,7 @@ import { Area, AreaChart, Bar, CartesianGrid, ComposedChart, Line, ResponsiveCon
 import { api } from '../servicios/api.js'
 
 const RANGE_MINUTES = { '1H': 60, '3H': 180, '6H': 360, '12H': 720, '24H': 1440 }
+const RANGE_LABELS = { '1H': 'Última hora', '3H': 'Últimas 3 horas', '6H': 'Últimas 6 horas', '12H': 'Últimas 12 horas', '24H': 'Últimas 24 horas' }
 const COLORS = ['#2563eb', '#7c3aed', '#f6bd38', '#a855f7']
 const SPARK_POINTS = 10
 const ACTIVITY_POINTS = 12
@@ -120,6 +121,7 @@ export function Servidor() {
   const [loading, setLoading] = useState(false)
   const [range, setRange] = useState('1H')
   const [modalType, setModalType] = useState(null)
+  const [actionMenu, setActionMenu] = useState(null)
 
   async function load(silent = false) {
     if (!silent) setLoading(true)
@@ -139,6 +141,64 @@ export function Servidor() {
     } finally {
       if (!silent) setLoading(false)
     }
+  }
+
+  function cambiarRango(nuevoRango) {
+    setRange(nuevoRango)
+    setActionMenu(null)
+  }
+
+  function exportarServidor(formato) {
+    const payload = {
+      capturedAt,
+      range,
+      cpu,
+      memory,
+      disk,
+      processes,
+      services,
+      events,
+      summary,
+      jobsActivity: data?.jobsActivity || [],
+      resourceHistory: data?.resourceHistory || []
+    }
+    const stamp = new Date().toISOString().replace(/[:.]/g, '-')
+    const filename = `servidor-${range.toLowerCase()}-${stamp}.${formato}`
+    let content = ''
+    let type = 'application/json;charset=utf-8'
+    if (formato === 'csv') {
+      type = 'text/csv;charset=utf-8'
+      const rows = [
+        ['seccion', 'metric', 'valor'],
+        ['resumen', 'rango', RANGE_LABELS[range] || range],
+        ['resumen', 'capturado_en', formatDateTime(capturedAt)],
+        ['cpu', 'uso_percent', pct(cpu.usedPercent)],
+        ['memoria', 'uso_percent', pct(memory.usedPercent)],
+        ['memoria', 'usada', gb(memory.usedBytes)],
+        ['memoria', 'total', gb(memory.totalBytes)],
+        ['disco', 'uso_percent', pct(disk.usedPercent)],
+        ['disco', 'usado', gb(disk.usedBytes)],
+        ['disco', 'total', gb(disk.totalBytes)],
+        ['procesos', 'total', processes.total || 0],
+        ['summary', 'ip', summary.ip || ''],
+        ['summary', 'os', summary.os || ''],
+        ['summary', 'kernel', summary.kernel || ''],
+        ['summary', 'arch', summary.arch || '']
+      ]
+      content = rows.map((row) => row.map((value) => `"${String(value ?? '').replace(/"/g, '""')}"`).join(',')).join('\n')
+    } else {
+      content = JSON.stringify(payload, null, 2)
+    }
+    const blob = new Blob([content], { type })
+    const url = URL.createObjectURL(blob)
+    const link = document.createElement('a')
+    link.href = url
+    link.download = filename
+    document.body.appendChild(link)
+    link.click()
+    link.remove()
+    URL.revokeObjectURL(url)
+    setActionMenu(null)
   }
 
   async function limpiarHistorial() {
@@ -211,8 +271,14 @@ export function Servidor() {
       <div className="srv-actions">
         <button onClick={() => load()} disabled={loading}><RefreshCw size={16}/>Actualizar</button>
         <button onClick={limpiarHistorial} disabled={loading} title="Limpia la tabla histórica de métricas del servidor"><Trash2 size={16}/>Limpiar historial</button>
-        <button><Clock3 size={16}/>Última hora<ChevronDown size={14}/></button>
-        <button><Download size={16}/>Exportar<ChevronDown size={14}/></button>
+        <div className="srv-action-menu-wrap">
+          <button type="button" className={actionMenu === 'range' ? 'active' : ''} onClick={() => setActionMenu(actionMenu === 'range' ? null : 'range')}><Clock3 size={16}/>{RANGE_LABELS[range] || 'Última hora'}<ChevronDown size={14}/></button>
+          {actionMenu === 'range' && <div className="srv-action-menu"><b>Rango de actividad</b>{Object.keys(RANGE_MINUTES).map((item) => <button key={item} type="button" className={range === item ? 'selected' : ''} onClick={() => cambiarRango(item)}>{RANGE_LABELS[item]}</button>)}</div>}
+        </div>
+        <div className="srv-action-menu-wrap">
+          <button type="button" className={actionMenu === 'export' ? 'active' : ''} onClick={() => setActionMenu(actionMenu === 'export' ? null : 'export')}><Download size={16}/>Exportar<ChevronDown size={14}/></button>
+          {actionMenu === 'export' && <div className="srv-action-menu right"><b>Exportar métricas</b><button type="button" onClick={() => exportarServidor('json')}>Descargar JSON</button><button type="button" onClick={() => exportarServidor('csv')}>Descargar CSV</button></div>}
+        </div>
       </div>
     </div>
 
@@ -243,8 +309,8 @@ export function Servidor() {
     <div className="srv-main-grid">
       <section className="srv-card srv-activity">
         <div className="srv-section-head">
-          <div><h2>Actividad del servidor</h2><p>Últimas 12 mediciones de 60 segundos: jobs por minuto y bytes transferidos.</p></div>
-          <div className="srv-tabs">{['1H','3H','6H','12H','24H'].map((item) => <button key={item} className={range === item ? 'active' : ''} onClick={() => setRange(item)}>{item}</button>)}<button><Calendar size={14}/></button></div>
+          <div><h2>Actividad del servidor</h2><p>{RANGE_LABELS[range]} · últimas 12 mediciones disponibles: jobs por minuto y bytes transferidos.</p></div>
+          <div className="srv-tabs">{['1H','3H','6H','12H','24H'].map((item) => <button key={item} type="button" className={range === item ? 'active' : ''} title={RANGE_LABELS[item]} onClick={() => cambiarRango(item)}>{item}</button>)}<button type="button" title="Cambiar rango" onClick={() => setActionMenu(actionMenu === 'range' ? null : 'range')}><Calendar size={14}/></button></div>
         </div>
         <div className="srv-legend"><span><i className="blue"/>Jobs por minuto</span><span><i className="purple"/>Bytes transferidos por minuto</span></div>
         <ResponsiveContainer width="100%" height={210}>

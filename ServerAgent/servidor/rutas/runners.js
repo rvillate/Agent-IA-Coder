@@ -50,10 +50,14 @@ async function runnersLegacy() {
 }
 
 async function listarRunnersDisponibles(gatewayId) {
-  const dbItems = (await listarRunners(gatewayId)).map(normalizarRunner).filter(Boolean)
+  let dbItems = (await listarRunners(gatewayId)).map(normalizarRunner).filter(Boolean)
+  if (!dbItems.length) {
+    const { rows } = await consulta('SELECT * FROM aplicacion.runners ORDER BY actualizado_en DESC NULLS LAST, id ASC LIMIT 50')
+    dbItems = rows.map(normalizarRunner).filter(Boolean).map((item) => ({ ...item, source: 'control-agent-fallback' }))
+  }
   const legacyItems = await runnersLegacy()
   const mapa = new Map()
-  for (const item of dbItems) mapa.set(item.id, { ...item, source: 'control-agent' })
+  for (const item of dbItems) mapa.set(item.id, { ...item, source: item.source || 'control-agent' })
   for (const item of legacyItems) mapa.set(item.id, { ...(mapa.get(item.id) || {}), ...item, source: 'gateway' })
   return [...mapa.values()].sort((a, b) => {
     const ao = a.status === 'online' ? 0 : 1
