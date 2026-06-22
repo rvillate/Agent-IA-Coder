@@ -70,22 +70,28 @@ let actividadJobsReady = false
 
 async function asegurarTablaActividadJobs() {
   if (actividadJobsReady) return
-  await consulta(`CREATE TABLE IF NOT EXISTS aplicacion.servidor_jobs_actividad_historico (
-    gateway_id text NOT NULL,
+  await consulta(`CREATE TABLE IF NOT EXISTS aplicacion.servidor_jobs_actividad_minutos (
+    scope_key text NOT NULL,
     bucket timestamptz NOT NULL,
     jobs integer NOT NULL DEFAULT 0,
     bytes bigint NOT NULL DEFAULT 0,
     actualizado_en timestamptz NOT NULL DEFAULT now(),
-    PRIMARY KEY(gateway_id, bucket)
+    PRIMARY KEY(scope_key, bucket)
   )`)
-  await consulta(`CREATE INDEX IF NOT EXISTS idx_servidor_jobs_actividad_bucket ON aplicacion.servidor_jobs_actividad_historico(gateway_id, bucket ASC)`)
+  await consulta(`CREATE INDEX IF NOT EXISTS idx_servidor_jobs_actividad_minutos_bucket ON aplicacion.servidor_jobs_actividad_minutos(scope_key, bucket ASC)`)
   actividadJobsReady = true
 }
 
-async function actividadJobs(gatewayId, minutos = 60) {
-  await asegurarTablaActividadJobs()
-  const limit = Math.max(5, Math.min(Number(minutos || 60), 1440))
-  let { rows } = await consulta(`SELECT date_trunc('minute', creado_en) AS bucket,
+function normalizarActividadRows(rows = []) {
+  return rows.map((row) => ({
+    bucket: row.bucket,
+    jobs: Number(row.jobs || 0),
+    bytes: Number(row.bytes || 0)
+  }))
+}
+
+async function leerActividadJobsFuente(gatewayId, limit) {
+  const query = `SELECT date_trunc('minute', creado_en) AS bucket,
       COUNT(*)::int AS jobs,
       COALESCE(SUM(
         octet_length(COALESCE(payload::text,''))+
@@ -96,57 +102,47 @@ async function actividadJobs(gatewayId, minutos = 60) {
         octet_length(COALESCE(error,''))
       ),0)::bigint AS bytes
     FROM aplicacion.jobs
-    WHERE gateway_id=$1 AND creado_en >= now() - ($2::int * interval '1 minute')
+    WHERE ${gatewayId ? 'gateway_id=$1 AND creado_en >= now() - ($2::int * interval \'1 minute\')' : 'creado_en >= now() - ($1::int * interval \'1 minute\')'}
     GROUP BY 1
-    ORDER BY 1 ASC`, [gatewayId, limit])
-  if (!rows.length) {
-    const fallback = await consulta(`SELECT date_trunc('minute', creado_en) AS bucket,
-        COUNT(*)::int AS jobs,
-        COALESCE(SUM(
-          octet_length(COALESCE(payload::text,''))+
-          octet_length(COALESCE(resultado::text,''))+
-          octet_length(COALESCE(stdout_tail,''))+
-          octet_length(COALESCE(stderr_tail,''))+
-          octet_length(COALESCE(resumen,''))+
-          octet_length(COALESCE(error,''))
-        ),0)::bigint AS bytes
-      FROM aplicacion.jobs
-      WHERE creado_en >= now() - ($1::int * interval '1 minute')
-      GROUP BY 1
-      ORDER BY 1 ASC`, [limit])
-    rows = fallback.rows
-  }
+    ORDER BY 1 ASC`
+  const params = gatewayId ? [gatewayId, limit] : [limit]
+  const { rows } = await consulta(query, params)
+  return normalizarActividadRows(rows)
+}
+
+async function actividadJobs(gatewayId, minutos = 60) {
+  await asegurarTablaActividadJobs()
+  const limit = Math.max(5, Math.min(Number(minutos || 60), 1440))
+  const scopeKey = String(gatewayId || 'default')
+  let rows = await leerActividadJobsFuente(gatewayId, limit)
+  if (!rows.length) rows = await leerActividadJobsFuente(null, limit)
 
   for (const row of rows) {
-    await consulta(`INSERT INTO aplicacion.servidor_jobs_actividad_historico(gateway_id, bucket, jobs, bytes)
+    await consulta(`INSERT INTO aplicacion.servidor_jobs_actividad_minutos(scope_key, bucket, jobs, bytes)
       VALUES($1, $2, $3, $4)
-      ON CONFLICT(gateway_id, bucket) DO UPDATE SET
-        jobs = GREATEST(aplicacion.servidor_jobs_actividad_historico.jobs, EXCLUDED.jobs),
-        bytes = GREATEST(aplicacion.servidor_jobs_actividad_historico.bytes, EXCLUDED.bytes),
-        actualizado_en = now()`, [gatewayId, row.bucket, Number(row.jobs || 0), Number(row.bytes || 0)])
+      ON CONFLICT(scope_key, bucket) DO UPDATE SET
+        jobs = GREATEST(aplicacion.servidor_jobs_actividad_minutos.jobs, EXCLUDED.jobs),
+        bytes = GREATEST(aplicacion.servidor_jobs_actividad_minutos.bytes, EXCLUDED.bytes),
+        actualizado_en = now()`, [scopeKey, row.bucket, row.jobs, row.bytes])
   }
-  await consulta(`DELETE FROM aplicacion.servidor_jobs_actividad_historico WHERE gateway_id=$1 AND bucket < now() - interval '25 hours'`, [gatewayId]).catch(() => {})
+  await consulta(`DELETE FROM aplicacion.servidor_jobs_actividad_minutos WHERE scope_key=$1 AND bucket < now() - interval '25 hours'`, [scopeKey]).catch(() => {})
 
   const { rows: historico } = await consulta(`SELECT bucket, jobs, bytes
-    FROM aplicacion.servidor_jobs_actividad_historico
-    WHERE gateway_id=$1 AND bucket >= now() - ($2::int * interval '1 minute')
-    ORDER BY bucket ASC`, [gatewayId, limit])
+    FROM aplicacion.servidor_jobs_actividad_minutos
+    WHERE scope_key=$1 AND bucket >= now() - ($2::int * interval '1 minute')
+    ORDER BY bucket ASC`, [scopeKey, limit])
   const map = new Map(historico.map((row) => [bucketIso(row.bucket), { jobs: Number(row.jobs || 0), bytes: Number(row.bytes || 0) }]))
   const buckets = []
   const now = new Date(); now.setSeconds(0, 0)
-  let jobsAcumulados = 0
-  let bytesAcumulados = 0
   for (let i = limit - 1; i >= 0; i -= 1) {
     const d = new Date(now.getTime() - i * 60000)
     const key = d.toISOString()
     const item = map.get(key) || { jobs: 0, bytes: 0 }
-    jobsAcumulados += item.jobs
-    bytesAcumulados += item.bytes
     buckets.push({
       bucket: key,
       label: d.toLocaleTimeString('es-CO', { hour: '2-digit', minute: '2-digit', hour12: false }),
-      jobs: jobsAcumulados,
-      bytes: bytesAcumulados,
+      jobs: item.jobs,
+      bytes: item.bytes,
       jobsMinute: item.jobs,
       bytesMinute: item.bytes
     })
