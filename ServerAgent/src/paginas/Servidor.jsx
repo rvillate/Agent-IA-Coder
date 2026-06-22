@@ -7,7 +7,6 @@ const RANGE_MINUTES = { '1H': 60, '3H': 180, '6H': 360, '12H': 720, '24H': 1440 
 const RANGE_LABELS = { '1H': 'Última hora', '3H': 'Últimas 3 horas', '6H': 'Últimas 6 horas', '12H': 'Últimas 12 horas', '24H': 'Últimas 24 horas' }
 const COLORS = ['#2563eb', '#7c3aed', '#f6bd38', '#a855f7']
 const SPARK_POINTS = 10
-const ACTIVITY_POINTS = 12
 
 function pct(value) {
   const n = Number(value)
@@ -87,7 +86,9 @@ function JobsTooltip({ active, payload, label }) {
   if (!active || !payload?.length) return null
   const jobs = payload.find((item) => item.dataKey === 'jobs')?.value || 0
   const transfer = payload.find((item) => item.dataKey === 'bytes')?.value || 0
-  return <div className="srv-tooltip"><b>{label}</b><span>Jobs: {jobs}</span><span>Bytes/min: {bytes(transfer)}</span></div>
+  const jobsMinute = payload.find((item) => item.dataKey === 'jobsMinute')?.value || 0
+  const bytesMinute = payload.find((item) => item.dataKey === 'bytesMinute')?.value || 0
+  return <div className="srv-tooltip"><b>{label}</b><span>Jobs acumulados: {jobs}</span><span>Jobs/min: {jobsMinute}</span><span>Bytes acumulados: {bytes(transfer)}</span><span>Bytes/min: {bytes(bytesMinute)}</span></div>
 }
 
 
@@ -227,7 +228,7 @@ export function Servidor() {
   const events = data?.events || []
   const summary = data?.summary || {}
   const capturedAt = data?.capturedAt || Date.now()
-  const lastHourJobs = (data?.jobsActivity || []).reduce((acc, item) => acc + Number(item.jobs || 0), 0)
+  const lastHourJobs = (data?.jobsActivity || []).at(-1)?.jobs || 0
   const resourceData = [
     { name: 'CPU', value: pct(cpu.usedPercent) },
     { name: 'Memoria', value: pct(memory.usedPercent) },
@@ -235,7 +236,8 @@ export function Servidor() {
     { name: 'Red', value: 100 }
   ]
   const h = (key) => history.slice(-SPARK_POINTS).map((item) => ({ label: item.label, value: item[key] }))
-  const activityData = (data?.jobsActivity || []).slice(-ACTIVITY_POINTS)
+  const activityData = data?.jobsActivity || []
+  const xInterval = activityData.length > 180 ? Math.ceil(activityData.length / 8) : activityData.length > 60 ? Math.ceil(activityData.length / 10) : Math.max(0, Math.ceil(activityData.length / 8) - 1)
   const modal = useMemo(() => {
     if (modalType === 'processes') {
       const rows = processes.top || []
@@ -303,24 +305,24 @@ export function Servidor() {
         <p>Desde el {formatDateTime(data?.uptime?.since)}</p>
         <div className="srv-flat-meter"><div><span>Disponibilidad</span><b>99.61%</b></div><UsageBar value={99.61}/></div>
       </section>
-      <MetricCard icon={<Users/>} title="Procesos activos" value={processes.total || 0} subtitle={`+${Math.max(1, Math.round(lastHourJobs / 6))} desde la última hora`} badge="Normal" history={h('processes')} color="#2563eb" bars />
+      <MetricCard icon={<Users/>} title="Procesos activos" value={processes.total || 0} subtitle={`${lastHourJobs} jobs acumulados en el rango seleccionado`} badge="Normal" history={h('processes')} color="#2563eb" bars />
     </div>
 
     <div className="srv-main-grid">
       <section className="srv-card srv-activity">
         <div className="srv-section-head">
-          <div><h2>Actividad del servidor</h2><p>{RANGE_LABELS[range]} · últimas 12 mediciones disponibles: jobs por minuto y bytes transferidos.</p></div>
+          <div><h2>Actividad del servidor</h2><p>{RANGE_LABELS[range]} · histórico acumulado por minuto, sin descartar puntos mientras avanza el rango.</p></div>
           <div className="srv-tabs">{['1H','3H','6H','12H','24H'].map((item) => <button key={item} type="button" className={range === item ? 'active' : ''} title={RANGE_LABELS[item]} onClick={() => cambiarRango(item)}>{item}</button>)}<button type="button" title="Cambiar rango" onClick={() => setActionMenu(actionMenu === 'range' ? null : 'range')}><Calendar size={14}/></button></div>
         </div>
-        <div className="srv-legend"><span><i className="blue"/>Jobs por minuto</span><span><i className="purple"/>Bytes transferidos por minuto</span></div>
+        <div className="srv-legend"><span><i className="blue"/>Jobs acumulados</span><span><i className="purple"/>Bytes acumulados</span></div>
         <ResponsiveContainer width="100%" height={210}>
           <ComposedChart data={activityData} margin={{ top: 10, right: 8, bottom: 0, left: -10 }}>
             <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e6edf7" />
-            <XAxis dataKey="label" tick={{ fontSize: 11 }} interval={3} minTickGap={32} />
+            <XAxis dataKey="label" tick={{ fontSize: 11 }} interval={xInterval} minTickGap={24} />
             <YAxis yAxisId="jobs" hide allowDecimals={false} />
             <YAxis yAxisId="bytes" hide orientation="right" tickFormatter={bytes} />
             <Tooltip content={<JobsTooltip />} />
-            <Bar yAxisId="jobs" dataKey="jobs" fill="#2563eb" radius={[5, 5, 0, 0]} barSize={14} />
+            <Bar yAxisId="jobs" dataKey="jobs" fill="#2563eb" radius={[5, 5, 0, 0]} barSize={activityData.length > 120 ? 4 : activityData.length > 60 ? 7 : 12} />
             <Line yAxisId="bytes" type="monotone" dataKey="bytes" stroke="#7c3aed" strokeWidth={2.4} dot={false} />
           </ComposedChart>
         </ResponsiveContainer>

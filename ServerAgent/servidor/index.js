@@ -66,9 +66,26 @@ function bucketIso(date) {
   return d.toISOString()
 }
 
+let actividadJobsReady = false
+
+async function asegurarTablaActividadJobs() {
+  if (actividadJobsReady) return
+  await consulta(`CREATE TABLE IF NOT EXISTS aplicacion.servidor_jobs_actividad_historico (
+    gateway_id text NOT NULL,
+    bucket timestamptz NOT NULL,
+    jobs integer NOT NULL DEFAULT 0,
+    bytes bigint NOT NULL DEFAULT 0,
+    actualizado_en timestamptz NOT NULL DEFAULT now(),
+    PRIMARY KEY(gateway_id, bucket)
+  )`)
+  await consulta(`CREATE INDEX IF NOT EXISTS idx_servidor_jobs_actividad_bucket ON aplicacion.servidor_jobs_actividad_historico(gateway_id, bucket ASC)`)
+  actividadJobsReady = true
+}
+
 async function actividadJobs(gatewayId, minutos = 60) {
-  const limit = Math.max(5, Math.min(Number(minutos || 60), 240))
-  const { rows } = await consulta(`SELECT date_trunc('minute', creado_en) AS bucket,
+  await asegurarTablaActividadJobs()
+  const limit = Math.max(5, Math.min(Number(minutos || 60), 1440))
+  let { rows } = await consulta(`SELECT date_trunc('minute', creado_en) AS bucket,
       COUNT(*)::int AS jobs,
       COALESCE(SUM(
         octet_length(COALESCE(payload::text,''))+
@@ -82,14 +99,57 @@ async function actividadJobs(gatewayId, minutos = 60) {
     WHERE gateway_id=$1 AND creado_en >= now() - ($2::int * interval '1 minute')
     GROUP BY 1
     ORDER BY 1 ASC`, [gatewayId, limit])
-  const map = new Map(rows.map((row) => [bucketIso(row.bucket), { jobs: Number(row.jobs || 0), bytes: Number(row.bytes || 0) }]))
+  if (!rows.length) {
+    const fallback = await consulta(`SELECT date_trunc('minute', creado_en) AS bucket,
+        COUNT(*)::int AS jobs,
+        COALESCE(SUM(
+          octet_length(COALESCE(payload::text,''))+
+          octet_length(COALESCE(resultado::text,''))+
+          octet_length(COALESCE(stdout_tail,''))+
+          octet_length(COALESCE(stderr_tail,''))+
+          octet_length(COALESCE(resumen,''))+
+          octet_length(COALESCE(error,''))
+        ),0)::bigint AS bytes
+      FROM aplicacion.jobs
+      WHERE creado_en >= now() - ($1::int * interval '1 minute')
+      GROUP BY 1
+      ORDER BY 1 ASC`, [limit])
+    rows = fallback.rows
+  }
+
+  for (const row of rows) {
+    await consulta(`INSERT INTO aplicacion.servidor_jobs_actividad_historico(gateway_id, bucket, jobs, bytes)
+      VALUES($1, $2, $3, $4)
+      ON CONFLICT(gateway_id, bucket) DO UPDATE SET
+        jobs = GREATEST(aplicacion.servidor_jobs_actividad_historico.jobs, EXCLUDED.jobs),
+        bytes = GREATEST(aplicacion.servidor_jobs_actividad_historico.bytes, EXCLUDED.bytes),
+        actualizado_en = now()`, [gatewayId, row.bucket, Number(row.jobs || 0), Number(row.bytes || 0)])
+  }
+  await consulta(`DELETE FROM aplicacion.servidor_jobs_actividad_historico WHERE gateway_id=$1 AND bucket < now() - interval '25 hours'`, [gatewayId]).catch(() => {})
+
+  const { rows: historico } = await consulta(`SELECT bucket, jobs, bytes
+    FROM aplicacion.servidor_jobs_actividad_historico
+    WHERE gateway_id=$1 AND bucket >= now() - ($2::int * interval '1 minute')
+    ORDER BY bucket ASC`, [gatewayId, limit])
+  const map = new Map(historico.map((row) => [bucketIso(row.bucket), { jobs: Number(row.jobs || 0), bytes: Number(row.bytes || 0) }]))
   const buckets = []
   const now = new Date(); now.setSeconds(0, 0)
+  let jobsAcumulados = 0
+  let bytesAcumulados = 0
   for (let i = limit - 1; i >= 0; i -= 1) {
     const d = new Date(now.getTime() - i * 60000)
     const key = d.toISOString()
     const item = map.get(key) || { jobs: 0, bytes: 0 }
-    buckets.push({ bucket: key, label: d.toLocaleTimeString('es-CO', { hour: '2-digit', minute: '2-digit', hour12: false }), jobs: item.jobs, bytes: item.bytes })
+    jobsAcumulados += item.jobs
+    bytesAcumulados += item.bytes
+    buckets.push({
+      bucket: key,
+      label: d.toLocaleTimeString('es-CO', { hour: '2-digit', minute: '2-digit', hour12: false }),
+      jobs: jobsAcumulados,
+      bytes: bytesAcumulados,
+      jobsMinute: item.jobs,
+      bytesMinute: item.bytes
+    })
   }
   return buckets
 }
